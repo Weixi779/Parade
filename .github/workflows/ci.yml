@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: iOS build and tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build with the minimum toolchain
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.0.app/Contents/Developer
+        run: |
+          xcodebuild -version
+          xcodebuild -scheme Parade -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/ParadeMinimum" \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Run unit and UIKit integration tests
+        run: |
+          xcodebuild -version
+          xcodebuild -scheme Parade \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
+            -derivedDataPath "$RUNNER_TEMP/ParadeTests" \
+            -resultBundlePath "$RUNNER_TEMP/ParadeTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO test
+
+      - name: Build the public-API examples
+        run: python3 Examples/build.py
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ParadeTests
+          path: ${{ runner.temp }}/ParadeTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Shut down CI simulators
+        if: always()
+        run: xcrun simctl shutdown all

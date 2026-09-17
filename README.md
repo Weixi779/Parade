@@ -2,10 +2,13 @@
 
 A modular UICollectionView framework for Swift.
 
-Parade is under development. It provides typed section, cell, and supplementary
+Parade provides typed section, cell, and supplementary
 presenters, a replaceable data source, and a UIKit update orchestrator. The default
 implementation uses Parade's sectioned diff and staged updates. An adapter for
 Apple's `UICollectionViewDiffableDataSource` is also included.
+
+Version 0.1.0 is the first public release. During 0.x development, minor versions
+may change public API; see the [changelog](CHANGELOG.md) before upgrading.
 
 ## Requirements
 
@@ -18,20 +21,35 @@ Apple's `UICollectionViewDiffableDataSource` is also included.
 
 iOS 16 is the baseline for native self-sizing invalidation. It also includes the
 cell and supplementary registration APIs and item reconfiguration needed by the
-planned UIKit integration. See Apple's [What's new in UIKit](https://developer.apple.com/videos/play/wwdc2022/10068/).
+UIKit integration. See Apple's [What's new in UIKit](https://developer.apple.com/videos/play/wwdc2022/10068/).
 
 Swift 6 language mode enables full data-race safety checking. The tools version
 remains 6.0 until implementation requires a newer language or package feature.
 See [Announcing Swift 6](https://www.swift.org/blog/announcing-swift-6/).
 
-## Package
+## Installation
 
 The package exposes one library and module, `Parade`, with no external dependencies.
-Add this directory as a local package in Xcode and select the `Parade` product.
+In Xcode, choose **File > Add Package Dependencies**, enter
+`https://github.com/Weixi779/Parade.git`, and select the `Parade` product.
+Use **Up to Next Minor Version** from `0.1.0` to stay on the 0.1 release line.
+
+For a Swift package, add the dependency and product to your `Package.swift`:
 
 ```swift
-import Parade
+.package(
+    url: "https://github.com/Weixi779/Parade.git",
+    .upToNextMinor(from: "0.1.0")
+)
 ```
+
+```swift
+.product(name: "Parade", package: "Parade")
+```
+
+For local development, add this checkout as a local package instead.
+
+## Quick start
 
 The application supplies the `UICollectionView` and layout and retains a
 `CollectionOrchestrator`. It submits current `[any SectionPresenter]` compositions;
@@ -40,6 +58,9 @@ each section can hold any combination of `AnyCellPresenter` and
 relationship until that composition boundary.
 
 ```swift
+import UIKit
+import Parade
+
 struct MessagePresenter: CellPresenter {
     let id: UUID
     let text: String
@@ -86,9 +107,9 @@ initializer also stay there: UIKit's standard header/footer constants require it
 Captured supplementary IDs, kinds, and item indices are ordinary values afterward.
 
 The orchestrator, data sources, bridge, and registration registry retain their UI
-isolation. Default diff planning remains synchronous; removing isolation
-does not schedule background work. Presenter erasers are not Sendable, and this
-change adds no isolated-conformance feature or runtime actor assumption.
+isolation. Both supplied data sources execute on MainActor, and default diff planning
+is synchronous. Presenter erasers are not Sendable; Parade does not schedule
+background work or assume a runtime actor for nonisolated values.
 
 Put replaceable button actions
 and other closures in `setBehaviors(_:)`; Parade refreshes them even when content
@@ -212,9 +233,8 @@ replacement, reconfiguration, and supplementary update rules internally.
 The Apple adapter uses native snapshots for structural updates and position lookup.
 It translates the existing hashable identities to stable native integer identifiers,
 so presenters do not acquire `Sendable` constraints. Content changes are marked
-explicitly; a changed cell type reloads the item. Both supplied paths currently run
-through MainActor. This interface change adds no background diff scheduling or
-performance claim.
+explicitly; a changed cell type reloads the item. Both supplied paths run through
+MainActor. Neither includes background diff scheduling.
 
 ## Replacing the diff algorithm
 
@@ -276,6 +296,10 @@ targets macOS, where UIKit is unavailable; use an iOS destination for this packa
 Structural tests independently replay more than 23,000 transitions. UIKit tests
 cover data versions, reuse, self-sizing, supplementary updates, and reentrant
 submissions. These are functional checks, not real-device performance benchmarks.
+
+[CI](https://github.com/Weixi779/Parade/actions/workflows/ci.yml) checks the minimum
+Xcode 16.0 build, runs tests on Xcode 16.4 / iOS 18.5, and builds the public-API
+example app. See [verification](Docs/Verification.md) for coverage and limits.
 
 ## License
 

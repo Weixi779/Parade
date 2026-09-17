@@ -53,8 +53,8 @@ of that value, not another service or state owner.
 Sections are protocol implementations, not subclasses of a framework controller.
 An App Store section can transform one business model into two, four, or any number
 of cells. A chat section can hold heterogeneous text, image, and notice presenters.
-The same two layers support both cases. No separate whole-page presenter or public
-snapshot type is required.
+The same two layers support both cases. Applications submit section presenters;
+data-source implementations receive a captured `CollectionComposition`.
 
 `AnyCellPresenter` and `AnySupplementaryPresenter` erase at the heterogeneous array
 boundary. They retain an internal `underlyingPresenter`, along with captured
@@ -97,8 +97,7 @@ from the actual view binding, and the capability extension restores the concrete
 The existing public `shouldSelect`, `shouldDeselect`, and `shouldHighlight` queries
 are extensions alongside their capability protocols. They read the underlying
 policy when queried instead of capturing a Boolean at erasure time. Policy getters
-should be cheap and free of side effects. Capability casts now happen when consumed;
-no performance comparison with the previous cached callbacks has been established.
+should be cheap and free of side effects. Capability casts happen when consumed.
 
 Absent capabilities mean no presenter callbacks and no context menu. Selection,
 deselection, and highlighting policy defaults remain `true`, so collection-wide
@@ -352,8 +351,8 @@ successfully applied composition. It does not guess which duplicate is authorita
 
 Before the first structural batch, the default implementation replays the complete proposed plan to
 check identities, coordinates, conflicts, intermediate counts and final structure.
-It also prepares every intermediate presenter composition. A failed plan or missing
-mapping reloads the independently validated target before any batch has started.
+Each batch already contains its intermediate presenter composition. A failed plan
+reloads the independently validated target before any batch has started.
 Only after execution completes does the queue update its baseline, advance the
 revision, emit `onDidApply`, and complete successfully. Invalid input is rejected before entering the queue, without committing a target.
 
@@ -388,9 +387,8 @@ cell construction, configuration or event callbacks.
 | [DifferenceKit](https://github.com/ra1028/DifferenceKit/blob/master/Sources/Extensions/UIKitExtension.swift) | A valid diff still needs staged UIKit operations and per-stage data | Separate pure planning from UIKit execution |
 
 These are selective design references, not dependencies or an assertion of feature
-parity. The earlier RCK probe reproduced a crash for a same-Id registration change;
-Parade has a runtime regression for that case. The benchmark discussion selected
-Heckel as an implementation baseline, not as proof of a complete performance win.
+parity. Parade's tests cover its own behavior; no comparative performance claim
+is made for the complete update pipeline.
 
 ## Initial limits
 

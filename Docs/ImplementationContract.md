@@ -37,7 +37,7 @@ This records the implemented Presenter, diff and data-source boundaries (2026-09
 - UIKit callbacks resolve the version currently being presented. End-display callbacks
   resolve the presenter associated with the actual view, even after removal/reordering.
 
-## Public API direction
+## Public API
 
 `CollectionOrchestrator(collectionView:)` uses the default implementation;
 `init(collectionView:makeDataSource:)` accepts an external factory. Supplying
@@ -60,8 +60,8 @@ individual UI requirements; `DiffableElement: Equatable` has no actor requiremen
 Erasers and internal plans carrying them are not Sendable. The public algorithm
 remains generic, and its coordinate-only result is Sendable; do not add unchecked
 Sendable to AnyHashable or UI closures.
-The initial implementation computes small diffs synchronously and makes no benchmark
-claim about background execution or superiority to Apple's data source.
+Both supplied data sources execute on MainActor. The default computes diffs
+synchronously; neither implementation schedules background computation.
 
 ## Update rules
 
