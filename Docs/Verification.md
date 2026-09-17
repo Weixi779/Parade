@@ -200,6 +200,100 @@ Swift edits only clarify complexity documentation. No example app smoke test or
 performance benchmark was rerun; the checks above do not establish animation quality,
 iOS 16 runtime behavior or compilation with a Swift 6.0 toolchain.
 
+## Injectable data source verification
+
+The final full run passed **86 Swift Testing tests in ten suites** on 2026-09-17,
+using Xcode 27.0, Swift 6 language mode and the iPhone 18 Pro / iOS 27.0 simulator.
+It finished in 6.544 seconds. The module builds for a generic iOS Simulator with
+the package's iOS 16 deployment target.
+
+- Thirteen existing integration tests now run against both the default manual
+  implementation and the Apple diffable adapter. They cover content-only and
+  behavior-only changes, self sizing, same-ID cell-type replacement, moved cells
+  changing type across removed/new section endpoints, supplementary content/type/
+  topology changes, capture, rejection, empty/off-window updates, FIFO reentrancy,
+  and structural transitions with and without animation. Manual-operation assertions
+  remain on the manual path; native tests assert current queries and visible results.
+- A separate test file imports only `Parade`. An independent external data source
+  receives the supplied providers and validated compositions without internal access.
+  Suspending its first apply verifies that current queries stay with its current
+  data, the next submission waits, and public completions remain FIFO.
+- Both built-in factories run once, retain their implementation while the orchestrator
+  lives, and release it afterward. Tests cover non-Sendable reference identities,
+  movement, deletion/reinsertion, explicit reload, missing IDs and invalid positions.
+- Default algorithm injection, invalid-plan recovery, independent structural replay,
+  actor-boundary checks and actual-view lifecycle regressions remain covered.
+  Presenter protocols are unchanged. The planner no longer repeats its caller's
+  target in the returned changeset; behavior refresh remains verified at integration.
+
+Result: `/tmp/ParadeDataSourceTests-4.xcresult`.
+Log: `/tmp/ParadeDataSourceTests-4.log`.
+There are no Swift warnings, UIKit assertions or runner crashes. Xcode emits the
+existing App Intents metadata extraction warning. Later edits only clarify API
+documentation and this report.
+
+The standalone public-import example app also builds. IM uses the default source;
+App Store injects the Apple adapter. All **10 UI smoke checks pass**, including the
+shared install action updating all three App Store occurrences through native snapshots.
+Report: `/tmp/ParadeDataSource-smoke.json`.
+Build log: `/tmp/ParadeDataSource-example-build.log`.
+The standalone build retains its existing linker sysroot warning.
+
+No background diff scheduling or performance benchmark was added. These checks do
+not establish device performance, animation quality, iOS 16 runtime execution or
+compilation with the Swift 6.0 compiler. The installed compiler uses Swift 6 language
+mode. Both supplied data source implementations currently execute on MainActor.
+
+## Default implementation directory grouping
+
+Ten Swift files were moved into their owning data-source directories. Before/after
+SHA-256 checks confirm that their contents are unchanged. The default UIKit batch
+planner and validators now live in `DataSource/Default/`; shared composition,
+validation and content rules live directly in `DataSource/`.
+
+The generic iOS Simulator build passed after the moves. Log:
+`/tmp/ParadeDefaultSourceGrouping-build.log`. The move manifest with hashes is
+`/tmp/ParadeDefaultSourceMoves.json`. Tests were not rerun for this path-only change;
+the full functional verification above predates the moves.
+
+## Unified update plan verification
+
+After replacing the planner/stage wrappers with `CollectionUpdatePlan` and
+`CollectionBatch`, the full run passes **80 Swift Testing tests in nine suites**
+on the iPhone 18 Pro / iOS 27.0 simulator, using Xcode 27.0 in Swift 6 language
+mode. It finished in 6.539 seconds. Generic iOS Simulator compilation also passes.
+
+- Batches carry real section contents directly. The 23,386 default-algorithm
+  transitions and 2,000 alternate-algorithm transitions still run through an
+  independent identity replay oracle. Its surviving/moved values come from the
+  source, not the batch's declared target. Optional IDs remain covered.
+- Full-plan tests verify source content and supplementary metadata throughout
+  structural movement, final target-coordinate content edits, registration changes,
+  and planning using values local to a separate actor.
+- Input validation now belongs to `CollectionComposition`. Existing tests retain
+  duplicate scopes, supplementary constraints, both conflict coordinates, and the
+  first-error precedence across sections, cells and supplementaries.
+- The unused generic indexing API and its seven tests were removed. One new public
+  algorithm test covers duplicate section/item IDs on both input sides, in addition
+  to the existing position-lookup diagnostic tests. This accounts for 86 to 80 tests.
+- Malformed algorithm results, incomplete moves, invalid/conflicting batch operations,
+  reload recovery before UIKit mutation, FIFO reentrancy, and both data sources'
+  UIKit regressions continue to pass. Public protocols and API declarations are
+  unchanged by this internal refactor.
+
+Result: `/tmp/ParadeUpdatePlanTests-2.xcresult`.
+Log: `/tmp/ParadeUpdatePlanTests-2.log`.
+Build log: `/tmp/ParadeUpdatePlan-build.log`.
+The final run has no Swift warnings, UIKit assertions or runner crashes; Xcode still
+emits its unrelated App Intents metadata extraction warning.
+
+The standalone public-import example app builds and passes all **10 UI smoke checks**
+with the default IM data source and injected Apple App Store data source.
+Report: `/tmp/ParadeUpdatePlan-smoke.json`.
+Build log: `/tmp/ParadeUpdatePlan-example-build.log` (the existing linker sysroot
+warning remains). Later edits only update documentation. No new performance benchmark,
+background scheduling, iOS 16 runtime run or Swift 6.0 compiler check was performed.
+
 ## Limits
 
 iOS 16 runtime execution was not possible on this host: CoreSimulator reports that

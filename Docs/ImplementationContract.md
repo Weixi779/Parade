@@ -1,17 +1,16 @@
 # Parade implementation contract
 
-This is the first implementation boundary, agreed naming from the design discussion,
-and the working contract between the implementation tasks (2026-09-17).
+This records the implemented Presenter, diff and data-source boundaries (2026-09-17).
 
 ## Ownership
 
 - The application creates `UICollectionView` and its system layout and owns business state.
-- `SectionPresenter` is a public, main-actor protocol: stable `id`, current
+- `SectionPresenter` exposes stable `id` and main-actor composition getters:
   `cells: [AnyCellPresenter]`, and `supplementaryViews: [AnySupplementaryPresenter]`.
   Empty sections are retained. Each section can produce any number of cell types.
-- `CellPresenter` and `SupplementaryPresenter` are main-actor protocols with generic
-  identity and view types, explicit content comparison, configuration, and behavior
-  binding. Concrete presenters should be immutable values after submission.
+- `CellPresenter` and `SupplementaryPresenter` retain generic identity/view types
+  and ordinary content comparison, with main-actor configuration and behavior binding.
+  Concrete presenters should be immutable values after submission.
 - Both erasers retain an internal `underlyingPresenter` and captured identity and
   registration information. Basic operations use internal protocol-extension bridges;
   erasers do not store forwarding closures. The orchestrator's `ViewRegistry` owns
@@ -26,13 +25,24 @@ and the working contract between the implementation tasks (2026-09-17).
   UIKit consumers query the capability from the bound view's presenter, with typed
   adaptation alongside the capability protocol.
 - `CollectionOrchestrator` captures each submission's section composition, owns the
-  last applied baseline, serial updates, UIKit data source/delegate, and registrations.
+  last applied baseline, serial updates, the delegate bridge, and registrations.
+- The constructor's factory creates one `CollectionDataSource` instance retained by
+  the orchestrator. It owns current data/positions and UIKit updates and supplies the
+  stable native data source. View creation uses Parade's supplied providers.
+- `DefaultCollectionDataSource` owns its algorithm, current sections and position
+  indexes, batch execution, and reload recovery. Each `CollectionUpdatePlan` is a
+  complete validated value; its batches contain operations and real section contents.
+- `DiffableCollectionDataSource` uses Apple's native snapshots, with explicit content
+  refresh and native position queries.
 - UIKit callbacks resolve the version currently being presented. End-display callbacks
   resolve the presenter associated with the actual view, even after removal/reordering.
 
 ## Public API direction
 
-`CollectionOrchestrator(collectionView:diffAlgorithm:)` accepts `[any SectionPresenter]` through
+`CollectionOrchestrator(collectionView:)` uses the default implementation;
+`init(collectionView:makeDataSource:)` accepts an external factory. Supplying
+`diffAlgorithm:` selects an algorithm within the default implementation.
+The orchestrator accepts `[any SectionPresenter]` through
 `apply(_:animated:mode:completion:)` and an async throwing overload. `mode` is `.diff`
 or `.reload`. The application retains the orchestrator. Updates are FIFO; completion
 means all stages, content, supplementary, and behavior refreshes have been applied.
@@ -47,8 +57,9 @@ before mutation. There is no required public Snapshot or whole-page presenter ty
 MainActor belongs to UI operations and reads of live section/supplementary state,
 not identity, equality, captured data, or planning. Presenter protocols isolate
 individual UI requirements; `DiffableElement: Equatable` has no actor requirement.
-Erasers are not Sendable. Pure structural diff types are generic
-and conditionally Sendable; do not add unchecked Sendable to AnyHashable or UI closures.
+Erasers and internal plans carrying them are not Sendable. The public algorithm
+remains generic, and its coordinate-only result is Sendable; do not add unchecked
+Sendable to AnyHashable or UI closures.
 The initial implementation computes small diffs synchronously and makes no benchmark
 claim about background execution or superiority to Apple's data source.
 
@@ -61,16 +72,23 @@ claim about background execution or superiority to Apple's data source.
 - `DiffableSection` is a read-only computation contract. Its own-content comparison
   excludes items; the captured Parade input adapts it without changing presenters.
   Algorithm results use original source/target coordinates, include every new/removed
-  item, and preserve transfers across deleted/new sections. No DataSource extension
-  point is introduced in this change.
+  item, and preserve transfers across deleted/new sections. The Apple data-source
+  implementation uses native diffing instead of this computation slot.
 - Identity, visual-content equality, and view-registration compatibility are distinct.
   Compatible content updates use reconfiguration. A registration/type change replaces
   the view. Content changes never suppress updates to closures/behavior bindings.
 - Presenters sharing a view type must overwrite or clear bindings they own. The
   default `setBehaviors` no-op does not clear previously installed actions.
 - UIKit counts/data must match the result of each applied stage. Do not overlap batches.
-- Empty diffs issue no empty UIKit batch. Explicit reload and updates while off-window
-  install the latest composition using reloadData.
+- The default implementation issues no empty UIKit batch. Explicit reload and
+  off-window updates install the latest composition using reloadData; the Apple
+  implementation uses applySnapshotUsingReloadData.
+- Data-source apply receives complete validated source/target compositions and
+  finishes only when its UIKit work and current queries reach the target. The
+  orchestrator then refreshes behaviors/layout and publishes completion. A custom
+  source owns content refresh; the two supplied implementations share fixed rules.
+- Current section/item queries belong to the data source. The orchestrator retains
+  only the last completed baseline for the next apply, not a competing current index.
 - Invalid submissions fail without advancing the applied baseline or blocking the
   queue. They are not silently deduplicated. The complete structural plan and its
   presenter mappings are checked before the first batch; planning failures reload
@@ -83,17 +101,6 @@ claim about background execution or superiority to Apple's data source.
   is no presenter registration property or nib/XIB construction path.
 - The framework owns no network tasks, navigation, height cache, layout DSL, prefetch,
   drag/drop, or scroll-position policy.
-
-## Work allocation
-
-- Presenter task: `Sources/Parade/Cell/`, `Sources/Parade/Section/`,
-  `Sources/Parade/Supplementary/`, and `Sources/Parade/Registration/`, with corresponding
-  tests. Define typed protocols, erasers, and registration cache.
-- Diff task: `Sources/Parade/Diff/` and structural diff tests. Pure UIKit-independent
-  stage planning and independent replay validation.
-- UIKit task: `Sources/Parade/UIKit/` delegate/data-source bridge and event forwarding.
-- Integration task: orchestrator, captured display records, package test target, docs,
-  and integration tests/examples for IM and App Store.
 
 ## Required verification
 

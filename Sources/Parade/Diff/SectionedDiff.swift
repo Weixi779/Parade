@@ -10,18 +10,8 @@ public struct SectionedDiff: SectionedDiffAlgorithm {
         from source: [Section],
         to target: [Section]
     ) throws -> SectionedChanges {
-        let sourceIndex = try DiffIndex(
-            source,
-            id: { $0.id },
-            items: { $0.items.map(\.id) },
-            input: .source
-        )
-        let targetIndex = try DiffIndex(
-            target,
-            id: { $0.id },
-            items: { $0.items.map(\.id) },
-            input: .target
-        )
+        let sourceIndex = try CollectionPositions(source, input: .source)
+        let targetIndex = try CollectionPositions(target, input: .target)
         var changes = SectionedChanges()
         var sectionOrder = SourceOrder(count: source.count)
         for (section, value) in source.enumerated() {

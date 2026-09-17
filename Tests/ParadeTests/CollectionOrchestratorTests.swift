@@ -9,9 +9,9 @@ import UIKit
 @MainActor
 @Suite("Collection orchestration")
 struct CollectionOrchestratorTests {
-    @Test("Content-equal submissions refresh actions without reconfiguring the cell")
-    func behaviorOnlyUpdate() async throws {
-        let fixture = CollectionFixture()
+    @Test("Content-equal submissions refresh actions without reconfiguring the cell", arguments: CollectionBackend.allCases)
+    func behaviorOnlyUpdate(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         let events = Events()
         try await fixture.orchestrator.apply([TestSection(id: "messages", cells: [
@@ -33,14 +33,16 @@ struct CollectionOrchestratorTests {
         )
         #expect(events.actions == ["new", "selected:new"])
         #expect(cell.configurations == configurations)
-        #expect(fixture.collectionView.batches == 0)
-        #expect(fixture.collectionView.reloads == 0)
+        if backend == .manual {
+            #expect(fixture.collectionView.batches == 0)
+            #expect(fixture.collectionView.reloads == 0)
+        }
         #expect(fixture.orchestrator.appliedRevision == 2)
     }
 
-    @Test("Content updates retain compatible cells and invalidate their self sizing")
-    func contentAndSelfSizing() async throws {
-        let fixture = CollectionFixture()
+    @Test("Content updates retain compatible cells and invalidate their self sizing", arguments: CollectionBackend.allCases)
+    func contentAndSelfSizing(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         try await fixture.orchestrator.apply([textSection("messages", [1])], animated: false)
         let path = IndexPath(item: 0, section: 0)
@@ -55,13 +57,15 @@ struct CollectionOrchestratorTests {
         #expect(updated === cell)
         #expect(updated.label.text == longText)
         #expect(updated.frame.height > oldHeight)
-        #expect(fixture.collectionView.reconfigured == [path])
-        #expect(fixture.collectionView.replaced.isEmpty)
+        if backend == .manual {
+            #expect(fixture.collectionView.reconfigured == [path])
+            #expect(fixture.collectionView.replaced.isEmpty)
+        }
     }
 
-    @Test("The same Id can change its concrete cell registration")
-    func replacingCellType() async throws {
-        let fixture = CollectionFixture()
+    @Test("The same Id can change its concrete cell registration", arguments: CollectionBackend.allCases)
+    func replacingCellType(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         try await fixture.orchestrator.apply([textSection("messages", [1])], animated: false)
         fixture.collectionView.resetCounts()
@@ -70,14 +74,16 @@ struct CollectionOrchestratorTests {
         ])], animated: false)
         let path = IndexPath(item: 0, section: 0)
         #expect(fixture.collectionView.cellForItem(at: path) is ColorCell)
-        #expect(fixture.collectionView.replaced == [path])
-        #expect(fixture.collectionView.reconfigured.isEmpty)
+        if backend == .manual {
+            #expect(fixture.collectionView.replaced == [path])
+            #expect(fixture.collectionView.reconfigured.isEmpty)
+        }
         #expect(fixture.orchestrator.indexPath(for: 1) == path)
     }
 
-    @Test("A moved cell can change type while both section endpoints change")
-    func movedCellChangesType() async throws {
-        let fixture = CollectionFixture()
+    @Test("A moved cell can change type while both section endpoints change", arguments: CollectionBackend.allCases)
+    func movedCellChangesType(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         try await fixture.orchestrator.apply(
             [textSection("removed", [1, 2]), textSection("retained", [3])],
@@ -100,9 +106,9 @@ struct CollectionOrchestratorTests {
         #expect(fixture.orchestrator.numberOfItems == 3)
     }
 
-    @Test("Header-only sections survive and compatible supplementary content updates")
-    func supplementaryContentAndBehavior() async throws {
-        let fixture = CollectionFixture(headers: true)
+    @Test("Header-only sections survive and compatible supplementary content updates", arguments: CollectionBackend.allCases)
+    func supplementaryContentAndBehavior(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(headers: true, backend: backend)
         defer { fixture.close() }
         let events = Events()
         let old = TestSection(id: "empty-with-header", cells: [], supplementaryViews: [
@@ -134,13 +140,15 @@ struct CollectionOrchestratorTests {
         view.action?()
         #expect(view.label.text == "Second")
         #expect(events.actions == ["new"])
-        #expect(fixture.collectionView.sectionReloads.isEmpty)
-        #expect(fixture.collectionView.batches == 0)
+        if backend == .manual {
+            #expect(fixture.collectionView.sectionReloads.isEmpty)
+            #expect(fixture.collectionView.batches == 0)
+        }
     }
 
-    @Test("Supplementary registration changes replace the view")
-    func replacingSupplementaryType() async throws {
-        let fixture = CollectionFixture(headers: true)
+    @Test("Supplementary registration changes replace the view", arguments: CollectionBackend.allCases)
+    func replacingSupplementaryType(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(headers: true, backend: backend)
         defer { fixture.close() }
         try await fixture.orchestrator.apply([TestSection(id: "s", cells: [], supplementaryViews: [
             AnySupplementaryPresenter(HeaderPresenter(id: "h", text: "Header")),
@@ -157,12 +165,14 @@ struct CollectionOrchestratorTests {
             )
         )
         #expect(view is AlternateHeaderView)
-        #expect(fixture.collectionView.sectionReloads == IndexSet(integer: 0))
+        if backend == .manual {
+            #expect(fixture.collectionView.sectionReloads == IndexSet(integer: 0))
+        }
     }
 
-    @Test("Layout resolves header additions and removals from the current stage")
-    func supplementaryTopologyFollowsDisplayVersion() async throws {
-        let fixture = CollectionFixture(dynamicHeaders: true)
+    @Test("Layout resolves header additions and removals from the current stage", arguments: CollectionBackend.allCases)
+    func supplementaryTopologyFollowsDisplayVersion(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(dynamicHeaders: true, backend: backend)
         defer { fixture.close() }
         try await fixture.orchestrator.apply([textSection("section", [1, 2])], animated: false)
         let path = IndexPath(item: 0, section: 0)
@@ -185,9 +195,9 @@ struct CollectionOrchestratorTests {
         #expect(fixture.collectionView.numberOfItems(inSection: 0) == 2)
     }
 
-    @Test("Invalid submissions leave the applied composition and UIKit untouched")
-    func duplicateValidation() async throws {
-        let fixture = CollectionFixture()
+    @Test("Invalid submissions leave the applied composition and UIKit untouched", arguments: CollectionBackend.allCases)
+    func duplicateValidation(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         try await fixture.orchestrator.apply([textSection("one", [1])], animated: false)
         fixture.collectionView.resetCounts()
@@ -281,7 +291,7 @@ struct CollectionOrchestratorTests {
                   target.first?.items.count == 1 else { return changes }
             switch self {
             case .thrownError:
-                throw StructurePlanError("Injected algorithm failure")
+                throw CollectionUpdatePlan.ValidationError("Injected algorithm failure")
             case .invalidCoordinate:
                 changes.deletedItems = [.init(section: 0, item: 99)]
             case .incompleteResult:
@@ -370,9 +380,9 @@ struct CollectionOrchestratorTests {
         #expect(owner.numberOfItems == 1)
     }
 
-    @Test("Queued and callback-reentrant submissions finish in FIFO order")
-    func queuedUpdates() async throws {
-        let fixture = CollectionFixture()
+    @Test("Queued and callback-reentrant submissions finish in FIFO order", arguments: CollectionBackend.allCases)
+    func queuedUpdates(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         var completions: [Int] = []
         await withCheckedContinuation { continuation in
@@ -392,15 +402,17 @@ struct CollectionOrchestratorTests {
             }
         }
         #expect(completions == [1, 2, 3])
-        #expect(fixture.collectionView.maximumActiveBatches == 1)
+        if backend == .manual {
+            #expect(fixture.collectionView.maximumActiveBatches == 1)
+        }
         #expect(fixture.orchestrator.indexPath(for: 3) == IndexPath(item: 0, section: 0))
         #expect(fixture.orchestrator.indexPath(for: 1) == nil)
         #expect(fixture.orchestrator.appliedRevision == 3)
     }
 
-    @Test("Section composition is captured when submitted")
-    func capturedComposition() async throws {
-        let fixture = CollectionFixture()
+    @Test("Section composition is captured when submitted", arguments: CollectionBackend.allCases)
+    func capturedComposition(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         let mutable = MutableSection(
             id: "section",
@@ -414,9 +426,9 @@ struct CollectionOrchestratorTests {
         #expect(fixture.collectionView.numberOfItems(inSection: 0) == 1)
     }
 
-    @Test("Empty content preserves the application's background and scrolling policy")
-    func emptyContent() async throws {
-        let fixture = CollectionFixture()
+    @Test("Empty content preserves the application's background and scrolling policy", arguments: CollectionBackend.allCases)
+    func emptyContent(backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         let background = UIView()
         let empty = UIView()
@@ -432,26 +444,28 @@ struct CollectionOrchestratorTests {
         #expect(!fixture.collectionView.isScrollEnabled)
     }
 
-    @Test("Off-window updates install a reload without scheduling UIKit batches")
-    func offWindow() async throws {
+    @Test("Off-window updates install a reload without scheduling UIKit batches", arguments: CollectionBackend.allCases)
+    func offWindow(backend: CollectionBackend) async throws {
         let collectionView = RecordingCollectionView(
             frame: .zero,
             collectionViewLayout: UICollectionViewFlowLayout()
         )
-        let orchestrator = CollectionOrchestrator(collectionView: collectionView)
+        let orchestrator = backend.orchestrator(for: collectionView)
         try await orchestrator.apply([textSection("one", [1, 2])], animated: false)
-        #expect(collectionView.reloads == 1)
-        #expect(collectionView.batches == 0)
+        if backend == .manual {
+            #expect(collectionView.reloads == 1)
+            #expect(collectionView.batches == 0)
+        }
         #expect(orchestrator.numberOfItems == 2)
         #expect(orchestrator.appliedRevision == 1)
     }
 
     @Test(
         "Section transfers, empty endpoints, reversals and content changes reach UIKit",
-        arguments: [false, true]
+        arguments: [false, true], CollectionBackend.allCases
     )
-    func structuralTransitions(animated: Bool) async throws {
-        let fixture = CollectionFixture()
+    func structuralTransitions(animated: Bool, backend: CollectionBackend) async throws {
+        let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         let cases: [[(String, [Int])]] = [
             [("featured", [1, 2]), ("ranking", [3, 4, 5, 6]), ("recommendations", [7, 8, 9])],
@@ -497,7 +511,9 @@ struct CollectionOrchestratorTests {
                 #expect(cell.label.text == "\(generation):\(value[path.section].1[path.item])")
             }
         }
-        #expect(fixture.collectionView.maximumActiveBatches == 1)
+        if backend == .manual {
+            #expect(fixture.collectionView.maximumActiveBatches == 1)
+        }
     }
 }
 
@@ -627,6 +643,7 @@ private final class CollectionFixture {
     init(
         headers: Bool = false,
         dynamicHeaders: Bool = false,
+        backend: CollectionBackend = .manual,
         diffAlgorithm: any SectionedDiffAlgorithm = SectionedDiff()
     ) {
         let lookup = LayoutLookup()
@@ -669,10 +686,7 @@ private final class CollectionFixture {
         collectionView.selfSizingInvalidation = .enabledIncludingConstraints
         collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         controller.view.addSubview(collectionView)
-        orchestrator = CollectionOrchestrator(
-            collectionView: collectionView,
-            diffAlgorithm: diffAlgorithm
-        )
+        orchestrator = backend.orchestrator(for: collectionView, diffAlgorithm: diffAlgorithm)
         lookup.owner = orchestrator
         window.isHidden = false
         window.layoutIfNeeded()
@@ -744,6 +758,28 @@ private final class RecordingCollectionView: UICollectionView {
         super.performBatchUpdates(updates) { [self] finished in
             activeBatches -= 1
             completion?(finished)
+        }
+    }
+}
+
+
+enum CollectionBackend: CaseIterable, Sendable {
+    case manual, native
+
+    @MainActor
+    func orchestrator(
+        for view: UICollectionView,
+        diffAlgorithm: any SectionedDiffAlgorithm = SectionedDiff()
+    ) -> CollectionOrchestrator {
+        switch self {
+        case .manual:
+            CollectionOrchestrator(collectionView: view, diffAlgorithm: diffAlgorithm)
+        case .native:
+            CollectionOrchestrator(collectionView: view) { view, cell, supplementary in
+                DiffableCollectionDataSource(
+                    collectionView: view, cellProvider: cell, supplementaryProvider: supplementary
+                )
+            }
         }
     }
 }

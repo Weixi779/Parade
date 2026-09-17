@@ -699,7 +699,7 @@ struct CollectionViewBridgeTests {
         #expect(events.started.isEmpty && events.selected.isEmpty &&
             globalEvents.selectedIds.isEmpty)
 
-        fixture.view.dataSource = bridge
+        fixture.view.dataSource = fixture.defaultSource
         try await fixture.owner.apply(
             [Section(id: "section", cells: [cell("new", token: "new", events: events)])],
             animated: false,
@@ -773,7 +773,7 @@ private final class MissingCellDataSource: NSObject, UICollectionViewDataSource 
         _ collectionView: UICollectionView,
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
-        bridge.collectionView(collectionView, cellForItemAt: indexPath)
+        bridge.cell(in: collectionView, at: indexPath, presenter: bridge.owner?.cellPresenter(at: indexPath))
     }
 }
 
@@ -782,6 +782,7 @@ private final class Fixture {
     let window: UIWindow
     let view: UICollectionView
     let owner: CollectionOrchestrator
+    let defaultSource: DefaultCollectionDataSource
 
     init(header: Bool = false) {
         let layout = UICollectionViewFlowLayout()
@@ -790,6 +791,7 @@ private final class Fixture {
         let frame = CGRect(x: 0, y: 0, width: 320, height: 480)
         view = UICollectionView(frame: frame, collectionViewLayout: layout)
         owner = CollectionOrchestrator(collectionView: view)
+        defaultSource = view.dataSource as! DefaultCollectionDataSource
         let controller = UIViewController()
         controller.view.frame = frame
         controller.view.addSubview(view)
@@ -807,7 +809,7 @@ private final class Fixture {
                 owner.registry.prepare(presenter)
             }
         }
-        owner.displaySections = sections
+        defaultSource.sections = sections
     }
 }
 

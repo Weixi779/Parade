@@ -6,6 +6,34 @@ import Testing
 
 @Suite("Public sectioned diff contract")
 struct SectionedDiffTests {
+    @Test("The public algorithm rejects duplicate identities before producing changes", arguments: [
+        DiffInputError.Input.source, .target
+    ])
+    func duplicateIdentities(input: DiffInputError.Input) {
+        let duplicateSections = [ValueSection(id: "s"), ValueSection(id: "s")]
+        let duplicateItems = [
+            ValueSection(id: "a", items: [.init(id: 1)]),
+            ValueSection(id: "b", items: [.init(id: 1)])
+        ]
+        #expect(throws: DiffInputError.duplicateSectionId(
+            "s", input: input, first: 0, duplicate: 1
+        )) {
+            _ = try SectionedDiff().diff(
+                from: input == .source ? duplicateSections : [],
+                to: input == .target ? duplicateSections : []
+            )
+        }
+        #expect(throws: DiffInputError.duplicateItemId(
+            "1", input: input,
+            first: .init(section: 0, item: 0), duplicate: .init(section: 1, item: 0)
+        )) {
+            _ = try SectionedDiff().diff(
+                from: input == .source ? duplicateItems : [],
+                to: input == .target ? duplicateItems : []
+            )
+        }
+    }
+
     @Test("Section content and item content are independent, even with unchanged identities")
     func contentBoundaries() throws {
         let source = [ValueSection(id: "a", title: "header", items: [.init(id: 1, text: "old")])]

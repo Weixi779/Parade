@@ -32,7 +32,7 @@ public struct CollectionDiagnostic: Equatable, Sendable {
     /// For duplicate input, the original position followed by the duplicate.
     public let locations: [Location]
 
-    init(reason: Reason, recovery: Recovery, locations: [Location] = []) {
+    public init(reason: Reason, recovery: Recovery, locations: [Location] = []) {
         self.reason = reason
         self.recovery = recovery
         self.locations = locations

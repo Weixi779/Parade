@@ -1,14 +1,15 @@
 // Created by weixi on 2026/09/17.
 
 import Foundation
+import UIKit
 import Testing
 @testable import Parade
 
-struct StructurePlannerTests {
-    private typealias Section = SectionStructure<Int, Int>
-    private typealias Stage = StructureStage<Int, Int>
+struct CollectionBatchTests {
+    private typealias Section = SectionContent
+    private typealias Batch = CollectionBatch
 
-    @Test("Unchanged structure emits no stages, including retained empty sections")
+    @Test("Unchanged structure emits no batches, including retained empty sections")
     func unchanged() throws {
         let sections = [Section(id: 0, items: []), Section(id: 1, items: [10, 11])]
         #expect(try plan(from: sections, to: sections).isEmpty)
@@ -24,11 +25,11 @@ struct StructurePlannerTests {
             Section(id: 1, items: []),
             Section(id: 3, items: [])
         ]
-        let stages = try verify(from: source, to: target)
-        #expect(stages.allSatisfy { $0.movedItems.isEmpty && $0.movedSections.isEmpty })
-        #expect(stages.flatMap(\.deletedItems).count == 1)
-        #expect(stages.flatMap(\.insertedItems).count == 2)
-        #expect(stages.count == 2)
+        let batches = try verify(from: source, to: target)
+        #expect(batches.allSatisfy { $0.movedItems.isEmpty && $0.movedSections.isEmpty })
+        #expect(batches.flatMap(\.deletedItems).count == 1)
+        #expect(batches.flatMap(\.insertedItems).count == 2)
+        #expect(batches.count == 2)
         let reverse = try verify(from: target, to: source)
         #expect(reverse.allSatisfy { $0.movedItems.isEmpty && $0.movedSections.isEmpty })
     }
@@ -54,21 +55,21 @@ struct StructurePlannerTests {
     func transfersAcrossSectionMembership() throws {
         let source = [Section(id: 0, items: [0, 1, 2]), Section(id: 1, items: [3, 4])]
         let target = [Section(id: 2, items: [4, 0, 5]), Section(id: 1, items: [2, 3])]
-        let stages = try verify(from: source, to: target)
-        #expect(stages.count == 3)
-        #expect(stages[0].insertedSections.count == 1)
-        #expect(stages[1].movedItems.count == 3)
-        #expect(stages[1].deletedItems.isEmpty)
-        #expect(stages[1].insertedItems.isEmpty)
-        #expect(stages[2].deletedSections.count == 1)
+        let batches = try verify(from: source, to: target)
+        #expect(batches.count == 3)
+        #expect(batches[0].insertedSections.count == 1)
+        #expect(batches[1].movedItems.count == 3)
+        #expect(batches[1].deletedItems.isEmpty)
+        #expect(batches[1].insertedItems.isEmpty)
+        #expect(batches[2].deletedSections.count == 1)
 
         var current = source
-        var movedIds = Set<Int>()
-        for stage in stages {
-            for move in stage.movedItems {
-                movedIds.insert(current[move.from.section].items[move.from.item])
+        var movedIds = Set<AnyHashable>()
+        for batch in batches {
+            for move in batch.movedItems {
+                movedIds.insert(current[move.from.section].cellIds[move.from.item])
             }
-            current = try replay(stage, from: current)
+            current = try replay(batch, from: current)
         }
         #expect(movedIds == [0, 2, 4])
     }
@@ -77,10 +78,10 @@ struct StructurePlannerTests {
     func batchedReversal() throws {
         let source = [Section(id: 0, items: [0, 1, 2])]
         let target = [Section(id: 0, items: [2, 1, 0])]
-        let stages = try verify(from: source, to: target)
-        #expect(stages.count == 1)
-        #expect(stages[0].movedItems.count == 2)
-        #expect(stages[0].movedItems.contains { $0.from == $0.to })
+        let batches = try verify(from: source, to: target)
+        #expect(batches.count == 1)
+        #expect(batches[0].movedItems.count == 2)
+        #expect(batches[0].movedItems.contains { $0.from == $0.to })
 
         let sections = (0..<5).map { Section(id: $0, items: [$0]) }
         let reordered = try verify(from: sections, to: sections.reversed())
@@ -97,13 +98,13 @@ struct StructurePlannerTests {
             [Section(id: 0, items: [1]), Section(id: 1, items: [1])]
         ]
         for sections in invalid {
-            #expect(throws: DiffInputError.self) {
+            #expect(throws: CollectionComposition.ValidationFailure.self) {
                 try plan(from: sections, to: [])
             }
-            #expect(throws: DiffInputError.self) {
+            #expect(throws: CollectionComposition.ValidationFailure.self) {
                 try plan(from: [], to: sections)
             }
-            #expect(throws: DiffInputError.self) {
+            #expect(throws: CollectionComposition.ValidationFailure.self) {
                 try plan(from: sections, to: sections)
             }
         }
@@ -118,7 +119,7 @@ struct StructurePlannerTests {
         #expect(throws: DiffInputError.duplicateSectionId(
             "0", input: input, first: 0, duplicate: 1
         )) {
-            _ = try DiffIndex(sectionCollision, id: { $0.id }, items: { $0.items }, input: input)
+            _ = try CollectionPositions(sectionCollision, input: input)
         }
 
         let earlierItemCollision = [Section(id: 0, items: [1, 1]), Section(id: 0, items: [])]
@@ -128,10 +129,8 @@ struct StructurePlannerTests {
                 item: 1
             )
         )) {
-            _ = try DiffIndex(
+            _ = try CollectionPositions(
                 earlierItemCollision,
-                id: { $0.id },
-                items: { $0.items },
                 input: input
             )
         }
@@ -143,10 +142,8 @@ struct StructurePlannerTests {
                 item: 0
             )
         )) {
-            _ = try DiffIndex(
+            _ = try CollectionPositions(
                 crossSectionCollision,
-                id: { $0.id },
-                items: { $0.items },
                 input: input
             )
         }
@@ -211,7 +208,7 @@ struct StructurePlannerTests {
         }
     }
 
-    @Test("Two thousand deterministic mixed transitions replay every intermediate stage")
+    @Test("Two thousand deterministic mixed transitions replay every intermediate batch")
     func randomizedTransitions() throws {
         var generator = Generator(state: 0x506172616465)
         for _ in 0..<2_000 {
@@ -227,10 +224,10 @@ struct StructurePlannerTests {
         for _ in 0..<2_000 {
             let source = randomStructure(using: &generator)
             let target = randomStructure(using: &generator)
-            let stages = try plan(from: source, to: target, algorithm: StandardLibraryDiff())
+            let batches = try plan(from: source, to: target, algorithm: StandardLibraryDiff())
             var current = source
-            for stage in stages { current = try replay(stage, from: current) }
-            try #require(current == target)
+            for batch in batches { current = try replay(batch, from: current) }
+            try #require(identities(current) == identities(target))
         }
     }
 
@@ -238,50 +235,52 @@ struct StructurePlannerTests {
     func replayDoesNotTrustStoredTarget() throws {
         let source = [Section(id: 0, items: [0, 1])]
         let declaredTarget = [Section(id: 0, items: [1, 0])]
-        let invalidPlan = Stage(
+        let invalidPlan = Batch(
             sections: declaredTarget,
             movedItems: [(
                 from: ItemLocation(section: 0, item: 0),
                 to: ItemLocation(section: 0, item: 0)
             )]
         )
-        #expect(try replay(invalidPlan, from: source) != declaredTarget)
+        #expect(try identities(replay(invalidPlan, from: source)) != identities(declaredTarget))
     }
 
-    private func plan<S: Hashable, I: Hashable>(
-        from source: [SectionStructure<S, I>],
-        to target: [SectionStructure<S, I>],
+    private func plan(
+        from source: [Section],
+        to target: [Section],
         algorithm: any SectionedDiffAlgorithm = SectionedDiff()
-    ) throws -> [StructureStage<S, I>] {
-        let changes = try algorithm.diff(
-            from: source.map { StructuralSection(
-                id: $0.id,
-                items: $0.items.map { StructuralItem(id: $0) }
-            ) },
-            to: target.map { StructuralSection(
-                id: $0.id,
-                items: $0.items.map { StructuralItem(id: $0) }
-            ) }
-        )
-        return try StructurePlanner.stages(for: changes, from: source, to: target)
+    ) throws -> [Batch] {
+        try CollectionUpdatePlan(
+            from: CollectionComposition(source),
+            to: CollectionComposition(target),
+            using: algorithm
+        ).batches
+    }
+
+    private func plan(
+        for changes: SectionedChanges,
+        from source: [Section],
+        to target: [Section]
+    ) throws -> [Batch] {
+        try plan(from: source, to: target, algorithm: FixedDiff(changes: changes))
     }
 
     @discardableResult
-    private func verify(from source: [Section], to target: [Section]) throws -> [Stage] {
-        let stages = try plan(from: source, to: target)
-        try Stage.validate(stages, from: source, to: target)
+    private func verify(from source: [Section], to target: [Section]) throws -> [Batch] {
+        let batches = try plan(from: source, to: target)
+        try CollectionUpdatePlan.validate(batches, from: source, to: target)
         var current = source
-        for stage in stages {
-            let replayed = try replay(stage, from: current)
+        for batch in batches {
+            let replayed = try replay(batch, from: current)
             try #require(
-                replayed == stage.sections,
+                identities(replayed) == identities(batch.sections),
                 "Invalid intermediate plan from \(source) to \(target)"
             )
             current = replayed
         }
-        try #require(current == target, "Plan did not reach target from \(source) to \(target)")
-        #expect(stages.count <= 3)
-        return stages
+        try #require(identities(current) == identities(target), "Plan did not reach target from \(source) to \(target)")
+        #expect(batches.count <= 3)
+        return batches
     }
 
     @Test(
@@ -291,32 +290,32 @@ struct StructurePlannerTests {
         let source = [Section(id: 0, items: [0, 1])]
         let target = [Section(id: 0, items: [1, 0])]
         let invalid = [
-            Stage(
+            Batch(
                 sections: target,
                 movedItems: [(.init(section: 0, item: 0), .init(section: 0, item: 0))]
             ),
-            Stage(sections: target, deletedItems: [.init(section: 0, item: -1)]),
-            Stage(sections: target, insertedItems: [.init(section: 8, item: 0)]),
-            Stage(sections: target, movedItems: [
+            Batch(sections: target, deletedItems: [.init(section: 0, item: -1)]),
+            Batch(sections: target, insertedItems: [.init(section: 8, item: 0)]),
+            Batch(sections: target, movedItems: [
                 (.init(section: 0, item: 0), .init(section: 0, item: 0)),
                 (.init(section: 0, item: 0), .init(section: 0, item: 1))
             ]),
-            Stage(sections: source, movedSections: [(-1, 0)]),
-            Stage(
+            Batch(sections: source, movedSections: [(-1, 0)]),
+            Batch(
                 sections: source,
                 movedSections: [(0, 0)],
                 deletedItems: [.init(section: 0, item: 0)]
             ),
-            Stage(sections: source, insertedSections: IndexSet(integer: 99))
+            Batch(sections: source, insertedSections: IndexSet(integer: 99))
         ]
-        for stage in invalid {
-            #expect(throws: StructurePlanError.self) {
-                try Stage.validate([stage], from: source, to: target)
+        for batch in invalid {
+            #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+                try CollectionUpdatePlan.validate([batch], from: source, to: target)
             }
         }
     }
 
-    @Test("External results reject malformed moves and updates before stage construction")
+    @Test("External results reject malformed moves and updates before batch construction")
     func malformedResults() {
         let source = [Section(id: 0, items: [0, 1])]
         let target = [Section(id: 0, items: [1, 0])]
@@ -340,16 +339,16 @@ struct StructurePlannerTests {
             )
         ]
         for changes in invalid {
-            #expect(throws: StructurePlanError.self) {
-                try StructurePlanner.stages(for: changes, from: source, to: target)
+            #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+                try plan(for: changes, from: source, to: target)
             }
         }
         let inserted = [Section(id: 1, items: [2])]
         let newContentUpdate = SectionedChanges(
             insertedSections: [0], updatedSections: [0], insertedItems: [.init(section: 0, item: 0)]
         )
-        #expect(throws: StructurePlanError.self) {
-            try StructurePlanner.stages(for: newContentUpdate, from: [], to: inserted)
+        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+            try plan(for: newContentUpdate, from: [], to: inserted)
         }
         let newItemUpdate = SectionedChanges(
             insertedSections: [0], insertedItems: [.init(section: 0, item: 0)],
@@ -358,8 +357,8 @@ struct StructurePlannerTests {
                 item: 0
             )]
         )
-        #expect(throws: StructurePlanError.self) {
-            try StructurePlanner.stages(for: newItemUpdate, from: [], to: inserted)
+        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+            try plan(for: newItemUpdate, from: [], to: inserted)
         }
     }
 
@@ -368,12 +367,12 @@ struct StructurePlannerTests {
         let source = [Section(id: 0, items: [1])]
         let target = [Section(id: 2, items: [1])]
         let incomplete = SectionedChanges(deletedSections: [0], insertedSections: [0])
-        #expect(throws: StructurePlanError.self) {
-            try StructurePlanner.stages(for: incomplete, from: source, to: target)
+        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+            try plan(for: incomplete, from: source, to: target)
         }
         let sections = [Section(id: 0, items: []), Section(id: 1, items: [])]
-        #expect(throws: StructurePlanError.self) {
-            try StructurePlanner.stages(
+        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+            try plan(
                 for: SectionedChanges(),
                 from: sections,
                 to: sections.reversed()
@@ -383,39 +382,38 @@ struct StructurePlannerTests {
 
     @Test("Plan preflight supports optional identities without treating nil as an empty slot")
     func optionalIdentities() throws {
-        typealias OptionalSection = SectionStructure<Int?, Int?>
-        let source = [OptionalSection(id: nil, items: [nil, 1])]
-        let target = [OptionalSection(id: nil, items: [1, nil])]
-        let stages = try plan(from: source, to: target)
-        try StructureStage.validate(stages, from: source, to: target)
-        #expect(stages.count == 1)
+        let source = [Section(id: AnyHashable(nil as Int?), items: [nil, 1].map { AnyHashable($0 as Int?) })]
+        let target = [Section(id: AnyHashable(nil as Int?), items: [1, nil].map { AnyHashable($0 as Int?) })]
+        let batches = try plan(from: source, to: target)
+        try CollectionUpdatePlan.validate(batches, from: source, to: target)
+        #expect(batches.count == 1)
     }
 
     /// Replay simultaneous removals and destinations independently. Only inserted
-    /// values are read from stage.sections; surviving/moved values come from source.
-    private func replay(_ stage: Stage, from source: [Section]) throws -> [Section] {
-        try check(!stage.isEmpty, "Empty stage")
-        let hasSectionEdits = !stage.deletedSections.isEmpty || !stage.insertedSections.isEmpty ||
-            !stage.movedSections.isEmpty
+    /// values are read from batch.sections; surviving/moved values come from source.
+    private func replay(_ batch: Batch, from source: [Section]) throws -> [Section] {
+        try check(!batch.isEmpty, "Empty batch")
+        let hasSectionEdits = !batch.deletedSections.isEmpty || !batch.insertedSections.isEmpty ||
+            !batch.movedSections.isEmpty
         if hasSectionEdits {
             try check(
-                stage.deletedItems.isEmpty && stage.insertedItems.isEmpty &&
-                    stage.movedItems.isEmpty,
+                batch.deletedItems.isEmpty && batch.insertedItems.isEmpty &&
+                    batch.movedItems.isEmpty,
                 "Mixed section and item edits"
             )
-            let count = source.count - stage.deletedSections.count + stage.insertedSections.count
-            try check(count >= 0 && stage.sections.count == count, "Invalid section count")
+            let count = source.count - batch.deletedSections.count + batch.insertedSections.count
+            try check(count >= 0 && batch.sections.count == count, "Invalid section count")
             var result = [Section?](repeating: nil, count: count)
             var removed = Set<Int>()
-            for index in stage.deletedSections {
+            for index in batch.deletedSections {
                 try check(source.indices.contains(index), "Invalid section deletion")
                 try check(removed.insert(index).inserted, "Duplicate section source")
             }
-            for index in stage.insertedSections {
+            for index in batch.insertedSections {
                 try check(result.indices.contains(index), "Invalid section insertion")
-                result[index] = stage.sections[index]
+                result[index] = batch.sections[index]
             }
-            for move in stage.movedSections {
+            for move in batch.movedSections {
                 try check(
                     source.indices.contains(move.from) && result.indices.contains(move.to),
                     "Invalid section move"
@@ -437,50 +435,50 @@ struct StructurePlannerTests {
             return result.compactMap { $0 }
         }
 
-        try check(source.map(\.id) == stage.sections.map(\.id), "Item stage changed sections")
+        try check(source.map(\.id) == batch.sections.map(\.id), "Item batch changed sections")
         var removed = Set<ItemLocation>()
-        var slots = stage.sections.map { [Int?](repeating: nil, count: $0.items.count) }
+        var slots = batch.sections.map { [AnyHashable?](repeating: nil, count: $0.cellIds.count) }
         var additions = [Int](repeating: 0, count: source.count)
         var removals = [Int](repeating: 0, count: source.count)
-        for origin in stage.deletedItems {
+        for origin in batch.deletedItems {
             try check(contains(origin, in: source), "Invalid item deletion")
             try check(removed.insert(origin).inserted, "Duplicate item source")
             removals[origin.section] += 1
         }
-        for destination in stage.insertedItems {
-            try check(contains(destination, in: stage.sections), "Invalid item insertion")
+        for destination in batch.insertedItems {
+            try check(contains(destination, in: batch.sections), "Invalid item insertion")
             try check(
                 slots[destination.section][destination.item] == nil,
                 "Duplicate item destination"
             )
             slots[destination.section][destination.item] =
-                stage.sections[destination.section].items[destination.item]
+                batch.sections[destination.section].cellIds[destination.item]
             additions[destination.section] += 1
         }
-        for move in stage.movedItems {
+        for move in batch.movedItems {
             try check(
-                contains(move.from, in: source) && contains(move.to, in: stage.sections),
+                contains(move.from, in: source) && contains(move.to, in: batch.sections),
                 "Invalid item move"
             )
             try check(
                 removed.insert(move.from).inserted && slots[move.to.section][move.to.item] == nil,
                 "Conflicting item move"
             )
-            slots[move.to.section][move.to.item] = source[move.from.section].items[move.from.item]
+            slots[move.to.section][move.to.item] = source[move.from.section].cellIds[move.from.item]
             removals[move.from.section] += 1
             additions[move.to.section] += 1
         }
         for section in source.indices {
-            let count = source[section].items.count - removals[section] + additions[section]
+            let count = source[section].cellIds.count - removals[section] + additions[section]
             try check(slots[section].count == count, "Invalid item count")
-            var retained = source[section].items.indices.filter {
+            var retained = source[section].cellIds.indices.filter {
                 !removed.contains(ItemLocation(section: section, item: $0))
             }.makeIterator()
             for item in slots[section].indices where slots[section][item] == nil {
                 guard let origin = retained.next() else {
                     throw ReplayError("Missing retained item")
                 }
-                slots[section][item] = source[section].items[origin]
+                slots[section][item] = source[section].cellIds[origin]
             }
             try check(retained.next() == nil, "Extra retained item")
         }
@@ -489,7 +487,7 @@ struct StructurePlannerTests {
 
     private func contains(_ location: ItemLocation, in sections: [Section]) -> Bool {
         sections.indices.contains(location.section) &&
-            sections[location.section].items.indices.contains(location.item)
+            sections[location.section].cellIds.indices.contains(location.item)
     }
 
     private func check(_ condition: Bool, _ message: String) throws {
@@ -530,18 +528,37 @@ struct StructurePlannerTests {
             using: &generator
         ))
         for item in items {
-            sections[Int.random(in: sections.indices, using: &generator)].items.append(item)
+            sections[Int.random(in: sections.indices, using: &generator)].cellIds.append(item)
         }
         return sections
     }
 }
 
-private struct StructuralItem<Id: Hashable>: DiffableElement {
-    let id: Id
+private struct FixedDiff: SectionedDiffAlgorithm {
+    let changes: SectionedChanges
+    func diff<Section: DiffableSection>(from source: [Section], to target: [Section]) throws -> SectionedChanges {
+        changes
+    }
 }
 
-private struct StructuralSection<Id: Hashable, ItemId: Hashable>: DiffableSection {
-    let id: Id
-    let items: [StructuralItem<ItemId>]
-    func isContentEqual(to other: Self) -> Bool { true }
+private extension SectionContent {
+    init(id: AnyHashable, items: [AnyHashable]) {
+        self.init(id: id, cells: items.map { AnyCellPresenter(BatchCell(id: $0)) })
+    }
+
+    var cellIds: [AnyHashable] {
+        get { cells.map(\.id) }
+        set { self = replacingCells(newValue.map { AnyCellPresenter(BatchCell(id: $0)) }) }
+    }
+}
+
+private struct BatchCell: CellPresenter {
+    let id: AnyHashable
+    func configure(_ cell: UICollectionViewCell) {}
+}
+
+/// Independent identity projection for the replay oracle, with no production
+/// planning or validation helpers involved in computing its expected result.
+private func identities(_ sections: [SectionContent]) -> [[AnyHashable]] {
+    sections.map { [$0.id] + $0.cellIds }
 }

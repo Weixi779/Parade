@@ -2,9 +2,10 @@
 
 A modular UICollectionView framework for Swift.
 
-Parade is under development. Its first implementation provides typed section,
-cell, and supplementary presenters, a custom sectioned diff, and a UIKit update
-orchestrator. It does not use `UICollectionViewDiffableDataSource`.
+Parade is under development. It provides typed section, cell, and supplementary
+presenters, a replaceable data source, and a UIKit update orchestrator. The default
+implementation uses Parade's sectioned diff and staged updates. An adapter for
+Apple's `UICollectionViewDiffableDataSource` is also included.
 
 ## Requirements
 
@@ -84,8 +85,8 @@ may read application UI state. Reading supplementary `elementKind` and its erasu
 initializer also stay there: UIKit's standard header/footer constants require it.
 Captured supplementary IDs, kinds, and item indices are ordinary values afterward.
 
-The orchestrator, bridge, and registration registry retain their UI isolation. Diff
-planning remains synchronous when called by the orchestrator; removing isolation
+The orchestrator, data sources, bridge, and registration registry retain their UI
+isolation. Default diff planning remains synchronous; removing isolation
 does not schedule background work. Presenter erasers are not Sendable, and this
 change adds no isolated-conformance feature or runtime actor assumption.
 
@@ -166,10 +167,59 @@ See [architecture and update semantics](Docs/Architecture.md),
 [IM and App Store examples](Examples/ParadeExamples.swift).
 The [verification report](Docs/Verification.md) records the tested paths and limits.
 
+## Replacing the data source
+
+The default construction stays `CollectionOrchestrator(collectionView:)`. To choose
+another implementation, inject it at construction:
+
+```swift
+let orchestrator = CollectionOrchestrator(collectionView: collectionView) {
+    view, cell, supplementary in
+    DiffableCollectionDataSource(
+        collectionView: view,
+        cellProvider: cell,
+        supplementaryProvider: supplementary
+    )
+}
+```
+
+The closure runs once and returns a concrete instance conforming to
+`CollectionDataSource`. The orchestrator retains it. Each instance belongs to one
+collection view. It can be its own `UICollectionViewDataSource`, as the default is,
+or hold one, as the Apple adapter does. The orchestrator installs its `dataSource`
+property into UIKit; no internal switch selects the implementation. Start it empty
+and submit updates only through the orchestrator.
+
+A custom implementation supplies three things:
+
+- The stable native `UICollectionViewDataSource`, using the supplied cell and
+  supplementary providers for dequeue, configuration, and binding.
+- Current section/item counts, identity-position queries, presenter lookup, and
+  empty-content status. These must agree with UIKit during intermediate updates.
+- `apply(from:to:animated:mode:)`, which receives validated `CollectionComposition`
+  values containing captured sections, items, supplementary presenters, and lookup
+  tables. It returns after its UIKit update reaches the target, optionally returning
+  recovery diagnostics. It must reload a valid target if its diff cannot be applied.
+
+Parade keeps submission capture/validation, FIFO ordering, registration preparation,
+delegate handling, actual-view lifecycle bindings, final behavior refresh, diagnostics,
+and public completion. A bare `UICollectionViewDataSource` does not describe how to
+apply a new composition or when that update finishes, hence the additional protocol.
+Custom implementations own their content-update policy; they may conservatively
+reload changed content. The two supplied implementations share Parade's fixed
+replacement, reconfiguration, and supplementary update rules internally.
+
+The Apple adapter uses native snapshots for structural updates and position lookup.
+It translates the existing hashable identities to stable native integer identifiers,
+so presenters do not acquire `Sendable` constraints. Content changes are marked
+explicitly; a changed cell type reloads the item. Both supplied paths currently run
+through MainActor. This interface change adds no background diff scheduling or
+performance claim.
+
 ## Replacing the diff algorithm
 
-The default `SectionedDiff` compares complete sections and their items. Supply another
-`SectionedDiffAlgorithm` when creating the orchestrator:
+Within `DefaultCollectionDataSource`, `SectionedDiff` compares complete sections and
+their items. Supply another `SectionedDiffAlgorithm` through the convenience initializer:
 
 ```swift
 let orchestrator = CollectionOrchestrator(
@@ -177,6 +227,9 @@ let orchestrator = CollectionOrchestrator(
     diffAlgorithm: MySectionedDiff()
 )
 ```
+
+This slot replaces computation while keeping Parade's staging and UIKit update
+policy. The Apple data source path uses Apple's diff and does not use this slot.
 
 An implementation receives `[Section: DiffableSection]` for both input versions.
 Section identity and `isContentEqual(to:)` describe the section itself; `items`
@@ -190,8 +243,10 @@ all new/removed items even inside new/deleted sections. Match globally retained 
 IDs across sections, and allow an item to move and update together. Different valid
 move lists are supported; source-order survivors must fill the remaining target slots.
 
-Parade validates the structural result, translates it into UIKit batches, handles
-view replacement/reconfiguration, and finishes content and behavior updates. The
+The default data source constructs a validated `CollectionUpdatePlan`. Each internal
+`CollectionBatch` contains its UIKit operations and the section contents to display
+during them. Shared content rules handle view replacement/reconfiguration before
+Parade finishes behavior updates. The
 algorithm receives no UI execution responsibility. Errors or invalid results fall
 back to the captured valid target. Computation is synchronous; no background execution
 or minimal-move guarantee is implied.

@@ -4,25 +4,18 @@ Parade expresses a collection as a current composition of typed presenters. The
 application owns its state and creates the collection view and system layout.
 Parade owns the last applied composition and the mechanics of presenting the next one.
 
+Construction chooses the update implementation explicitly:
+
 ```mermaid
-flowchart TD
-    App[Application state and actions] --> Sections[SectionPresenter implementations]
-    Sections --> Cells[CellPresenter → AnyCellPresenter]
-    Sections --> Supplementaries[SupplementaryPresenter → AnySupplementaryPresenter]
-    Sections -->|apply current sections| Orchestrator[CollectionOrchestrator]
-    Orchestrator --> Captured[Validated composition and applied baseline]
-    Captured --> Diff[SectionedDiffAlgorithm]
-    Diff --> Differ[CollectionUpdatePlanner]
-    Differ --> Stages[StructurePlanner: UIKit batch coordinates]
-    Differ --> Changeset[Validated stages with presenter data and content edits]
-    Changeset --> Orchestrator
-    Orchestrator --> Bridge[UIKit data source and event bridge]
-    Bridge --> Registry[Cached native registrations]
-    Registry --> Collection[Application-owned UICollectionView]
-    Layout[Application-owned UIKit layout] --> Collection
-    Collection -->|interaction and visibility| Bridge
-    Bridge -->|typed presenter callbacks| App
+flowchart LR
+    App[Application] -->|makeDataSource closure| Factory[Create one CollectionDataSource]
+    Factory -->|retained instance| Orchestrator[CollectionOrchestrator]
+    Orchestrator -->|instance.dataSource| UIKit[UICollectionView.dataSource]
 ```
+
+The factory receives the collection view and Parade's cell/supplementary providers.
+It returns either `DefaultCollectionDataSource`, `DiffableCollectionDataSource`, or an
+application implementation. There is no backend-type branch in the orchestrator.
 
 ## Public roles
 
@@ -31,7 +24,31 @@ flowchart TD
 | SectionPresenter | Section identity and its current cells/supplementaries | Old section versions, requests, update queue |
 | CellPresenter | One occurrence's identity, content comparison, concrete cell configuration and behaviors | Collection indexing or other sections |
 | SupplementaryPresenter | Reusable-view identity, kind/item address, configuration and behaviors | Layout creation or cell lifetime |
-| CollectionOrchestrator | Captured versions, update ordering, bridge and registration cache | Domain state, navigation, scroll policy |
+| CollectionOrchestrator | Validated submissions, last completed baseline, FIFO queue, registry, delegate bridge, final completion | Current data-source positions, diff execution or UIKit batches |
+| CollectionDataSource | Current section/item queries, native data source, applying a captured target through UIKit | Business state, submission queue, delegate or view-creation policy |
+| DefaultCollectionDataSource | Current stage data and indexes, sectioned diff/planning, UIKit batches and reload recovery | Public completion or business events |
+| DiffableCollectionDataSource | Native snapshots and positions, logical/native identity mapping, current and previous presenter lookup during apply | Parade's structural planner or its algorithm slot |
+
+## Source ownership
+
+- `DataSource/Default/` contains the default data source, `CollectionUpdatePlan`,
+  `CollectionBatch`, and plan validation. A batch directly owns the section contents
+  it presents; no separate identity structure or presenter-binding stage is built.
+  These UIKit update rules are not part of the replaceable algorithm contract.
+- `DataSource/` contains the shared protocol, captured composition and input validation,
+  shared content-update rules, and the Apple implementation. Both implementations
+  consume these types, so they do not belong exclusively to the default source.
+- `Diff/` contains the public algorithm/input/result contracts, the default algorithm,
+  and its shared identity-position lookup. It does not contain UIKit batch planning.
+- `UIKit/` contains the fixed view/delegate bridge; `Registration/` owns native
+  registration and dequeue.
+
+The default implementation has three roles: the data source executes updates,
+`CollectionUpdatePlan` constructs a complete validated update, and `CollectionBatch`
+contains one batch's operations and its actual data. Plan validation is an extension
+of that value, not another service or state owner.
+
+## Presenter composition
 
 Sections are protocol implementations, not subclasses of a framework controller.
 An App Store section can transform one business model into two, four, or any number
@@ -50,9 +67,10 @@ type through standard `==`; concrete presenters can synthesize equality or provi
 an ordinary `static func ==` for presentation fields while excluding behavior closures.
 Identity, equality, captured data, and diff planning have no MainActor requirement.
 The erasers have no `Sendable` conformance.
-The structural planner uses generic
-hashable identities and is conditionally `Sendable`; the first executor computes
-its diff synchronously. No unchecked sendability is applied to UIKit or AnyHashable.
+The public algorithm remains generic over section and item types. Its change result
+is Sendable. The default update plan carries captured presenters and is not Sendable;
+its constructor is synchronous and nonisolated. No unchecked sendability is applied
+to UIKit or AnyHashable.
 
 `CellPresenter` requires identity, a concrete cell type, visual content comparison,
 configuration, and replaceable behavior binding. Selection, highlighting, display
@@ -108,7 +126,10 @@ Orchestrator state, the bridge's view records, registration, and UIKit execution
 remain MainActor-owned. The bridge's immutable binding values need no isolation.
 Pure planning can be performed in another actor using values created within that
 actor, without declaring erased presenters Sendable or moving UIKit views.
-The orchestrator continues to calculate its plan synchronously on its own actor.
+Both supplied data sources execute on MainActor. The default constructs its update
+plan synchronously; the Apple adapter awaits native snapshot application. Neither path
+adds background scheduling. Native integer identifiers satisfy the SDK's Sendable
+identity constraints without declaring erased presenters or AnyHashable Sendable.
 
 ## Three independent comparisons
 
@@ -132,34 +153,85 @@ address is `(sectionId, elementKind, itemIndex)`. Invalid duplicates or placemen
 are rejected before UIKit is touched. Native hashable equality applies to erased IDs;
 use domain Id wrappers when otherwise-equal values represent different identities.
 
-## Planning boundary
+## Applying a submission
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Orchestrator
+    participant Source as Selected DataSource
+    App->>Orchestrator: apply section presenters
+    Note over Orchestrator: Capture, validate, enqueue, prepare registrations
+    Orchestrator->>Source: await apply(last completed, target)
+    Note over Source: Own current data and UIKit update until settled
+    Source-->>Orchestrator: Finished, optional recovery diagnostics
+    Note over Orchestrator: Refresh behaviors/layout, commit baseline and revision
+    Orchestrator-->>App: Completion
+```
+
+`CollectionComposition` and `SectionContent` expose the existing captured input to
+external implementations. Callers still submit section presenters; they do not need
+to build a public snapshot. The composition is complete, including identity, content,
+and supplementary information. UIKit callbacks and public position queries read the
+selected data source, never the orchestrator's last completed baseline.
+
+For a cell request, the path is deliberately small:
 
 ```mermaid
 flowchart LR
-    Submission[Section presenters] --> Composition[Validated CollectionComposition]
-    Composition --> Queue[Orchestrator FIFO and applied baseline]
-    Queue --> Algorithm[Replaceable SectionedDiffAlgorithm]
-    Algorithm --> Changes[SectionedChanges: original-coordinate changes]
-    Changes --> Planner[CollectionUpdatePlanner + StructurePlanner]
-    Planner --> Changeset[CollectionChangeset: stages with data and content edits]
-    Changeset --> UIKit[Orchestrator executes UIKit and commits baseline]
+    UIKit[UIKit requests cell] --> Source[Selected DataSource resolves presenter]
+    Source --> Provider[Supplied cell provider]
+    Provider --> Registry[Registry dequeues and configures]
+    Registry --> Binding[Bridge binds actual cell]
 ```
 
-`CollectionComposition` holds captured sections and immutable presenter lookup tables.
-`CollectionInputIndex` validates identities and supplementary addresses while building
-those lookups, retaining the first and duplicate positions for diagnostics. Validation
-finishes each section before proceeding to the next, preserving the first reported error.
-Only validated compositions enter the queue or become a reload target; execution
-does not reread live presenters. Diff and stage validation also check their own identity
-inputs and operation coordinates. The empty baseline is valid by construction.
+The bridge also handles UIKit delegate callbacks. It retains bindings on actual
+views so an old disappearing view keeps the right presenter for its end-display
+callback. Events reach the presenter's application callback; business state changes
+produce a new submission. No context object is passed into business presenters.
 
-`Algorithms/Indexing.swift` owns shared insertion and collision handling. Sequence
-callers use `indexed(by:uniquingWith:)` for explicit resolution or `indexedByUniqueKey`
-to reject duplicates with their own concrete error type. `CollectionInputIndex` and
-`DiffIndex` share its incremental `IndexBuilder` to interleave
-identity domains in traversal order. The core knows no UIKit or domain diagnostics
-and keeps state only for one construction. Domain code owns identity scopes and
-error mapping; a failed construction never supplies a partial composition.
+## Default implementation's planning boundary
+
+```mermaid
+classDiagram
+    class DefaultCollectionDataSource {
+        <<public>>
+        Current data and UIKit execution
+    }
+    class CollectionUpdatePlan {
+        <<internal>>
+        Complete validated update
+    }
+    class CollectionBatch {
+        <<internal>>
+        Operations and displayed section contents
+    }
+    class SectionedDiffAlgorithm {
+        <<public>>
+        Replaceable difference calculation
+    }
+    class CollectionContentUpdates {
+        <<internal>>
+        Shared view update rules
+    }
+    DefaultCollectionDataSource --> SectionedDiffAlgorithm : retains
+    DefaultCollectionDataSource ..> CollectionUpdatePlan : constructs per update
+    CollectionUpdatePlan ..> SectionedDiffAlgorithm : uses
+    CollectionUpdatePlan *-- CollectionBatch : contains
+    CollectionUpdatePlan *-- CollectionContentUpdates : contains
+```
+
+`CollectionComposition` validates identities and supplementary addresses in its
+constructor while building immutable presenter lookups. Validation finishes each
+section before proceeding to the next, preserving the first reported error and both
+conflict positions. Only successful compositions enter the queue or become a reload
+target. There is no separate input-index object or generic dictionary builder.
+
+`CollectionPositions` is an internal calculation helper shared by the algorithm and
+plan validation. It maps identities to positions and rejects duplicate section/item
+identities with source/target coordinates. It owns no applied state. Input composition
+validation keeps its own traversal and diagnostics because supplementary constraints
+and error precedence belong to the captured composition.
 
 `SectionedDiffAlgorithm` is the public computation boundary. It receives two arrays
 of `DiffableSection`, including their items. Sections supply identity and comparison
@@ -178,26 +250,38 @@ next-unconsumed-source policy, with expected linear matching work/storage plus i
 hashing/comparison costs, and no minimal-move guarantee. `CollectionOrchestrator(collectionView:diffAlgorithm:)` accepts any implementation.
 The algorithm runs synchronously; the input's comparison rules still define content equality.
 
-`CollectionUpdatePlanner` binds the result to captured presenters and content operations.
-`StructurePlanner` converts original coordinates to safe batch coordinates, preserving
-the supplied retained-identity moves. It does not rerun a default diff. Inserted sections
-can temporarily precede their final position, requiring an additional planning move.
-Structural result validation checks exact membership changes, retained identity, bounds,
-conflicts and update coordinates; stage replay then checks move completeness and order.
+`CollectionUpdatePlan` invokes the supplied algorithm and validates its result before
+using any coordinates. It constructs up to three structural batches with complete
+`SectionContent` values. Each retained section keeps its source supplementary metadata,
+and each retained cell keeps its source presenter, even when moved into a new section.
+Inserted identities use target content. Final content edits use target coordinates.
+
+Each `CollectionBatch` stores operations and the exact contents the data source must
+expose during those operations. There is no identity-only section model, outer stage
+wrapper, or subsequent presenter reconstruction. `CollectionUpdatePlan+Validation`
+replays batch operations against the previous contents and compares identities to
+verify membership, coordinates, conflicts, move completeness, and final order.
 Content comparison completeness remains the algorithm's responsibility.
 
-Intermediate presenter reconstruction is concrete to `SectionContent`; it needs no
-public rebuilding protocol. Source/target lookups are used directly without merged
-presenter dictionaries. Planning has no applied state, queue, collection view or recovery policy.
+The plan preserves supplied retained-identity moves and never recalculates a default
+diff. An inserted section may need an extra move from its temporary insertion position.
+Planning owns no applied state, queue, collection view, or recovery policy. A throwing
+constructor cannot return a partially validated plan. Even an empty plan installs the
+newest target presenters before the shared behavior refresh.
 
-`CollectionChangeset` binds each structural stage's edits to its corresponding section
-content. All stages are validated and reconstructed before the result is returned.
-The final content phase and supplementary updates use target coordinates. Equal-content
-plans still carry the newest target presenters so behavior refresh cannot be lost.
+The default data source owns stage data, indexes, UIKit execution and reload recovery.
+Algorithm errors or invalid results recover by reloading the validated target before
+the first batch. The orchestrator owns the completed baseline and public completion.
 
-The orchestrator owns FIFO order, the committed baseline, registration preparation,
-UIKit execution, reload recovery, diagnostics, and completion. Algorithm errors or invalid
-results recover by reloading the validated target before the first batch.
+`CollectionContentUpdates` holds the fixed view-update rules shared by both supplied
+implementations. The default supplies its algorithm's content-change results; the
+Apple adapter compares captured content directly and marks native snapshot reloads
+or reconfigurations. Compatible supplementary updates configure visible views and
+invalidate layout. Supplementary topology or registration changes reload the section.
+The Apple adapter has no Parade structural stages: native snapshot APIs determine
+positions, while target and previous presenter lookups resolve native requests until
+apply completes. Removed identity mappings and the previous composition are released
+after completion.
 
 ## Update lifecycle
 
@@ -206,11 +290,8 @@ stateDiagram-v2
     [*] --> Idle
     Idle --> Queued: capture and validate submission
     Queued --> Preparing: prior submission completed
-    Preparing --> StructuralStages: diff on-window
-    Preparing --> Reload: explicit reload or off-window
-    StructuralStages --> Content: await each batch
-    Content --> Behaviors: replace / reconfigure cells and supplementaries
-    Reload --> Behaviors
+    Preparing --> Applying: invoke selected data source
+    Applying --> Behaviors: UIKit update reaches target
     Behaviors --> Completed: refresh bindings and finish layout
     Completed --> Queued: pending submission
     Completed --> Idle: queue empty
@@ -221,12 +302,12 @@ so a later change to the caller's array or section properties cannot change UIKi
 counts. Presenter values themselves must remain immutable after submission; the
 framework cannot deep-copy arbitrary reference models captured inside user code.
 
-The planner creates up to three nonempty structural stages: add destination sections,
+The update plan contains up to three nonempty structural batches: add destination sections,
 change/transfer items while section coordinates are stable, then delete/reorder
 sections. No-op structure creates no batch; ordinary item changes fit in one batch.
 The unique-Id Heckel move policy does not promise a minimal move count.
 
-Before each UIKit stage the data source is set to that stage's resulting structure.
+In the default implementation, each UIKit stage installs its resulting structure in the data source.
 Existing cell content stays associated with the source version during structural
 movement. After structure settles, content/registration changes are applied in a
 separate phase to avoid unsafe reload/move combinations. Supplementary topology or
@@ -269,7 +350,7 @@ explicit reload submissions. Parade keeps the current display and reports failur
 without advancing `appliedRevision`. Later valid submissions continue from the last
 successfully applied composition. It does not guess which duplicate is authoritative.
 
-Before the first structural batch, Parade replays the complete proposed plan to
+Before the first structural batch, the default implementation replays the complete proposed plan to
 check identities, coordinates, conflicts, intermediate counts and final structure.
 It also prepares every intermediate presenter composition. A failed plan or missing
 mapping reloads the independently validated target before any batch has started.
@@ -314,8 +395,8 @@ Heckel as an implementation baseline, not as proof of a complete performance win
 ## Initial limits
 
 - iOS 16 minimum, Swift tools/language mode 6.0; the installed toolchain is newer.
-- Collection views and layouts are application-owned. Do not replace the data source
-  or delegate while using the orchestrator; set the explicit forwarding delegates.
+- Collection views and layouts are application-owned. Select a data source in the
+  factory; do not replace it or the delegate during use. Set the explicit forwarding delegates.
 - No network/request ownership, layout DSL, height cache, navigation, prefetch API,
   drag/drop, interactive reordering, or automatic IM scroll anchoring is provided.
 - Pending updates are not coalesced; every accepted update has its own completion.

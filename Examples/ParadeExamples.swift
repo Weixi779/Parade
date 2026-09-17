@@ -85,7 +85,15 @@ public final class AppStoreExampleViewController: UIViewController {
         frame: .zero,
         collectionViewLayout: makeLayout()
     )
-    private lazy var orchestrator = CollectionOrchestrator(collectionView: collectionView)
+    // This example injects Apple's implementation; the IM example uses Parade's default.
+    private lazy var orchestrator = CollectionOrchestrator(collectionView: collectionView) {
+        view, cell, supplementary in
+        DiffableCollectionDataSource(
+            collectionView: view,
+            cellProvider: cell,
+            supplementaryProvider: supplementary
+        )
+    }
 
     public override func viewDidLoad() {
         super.viewDidLoad()

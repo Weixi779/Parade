@@ -6,18 +6,14 @@ import UIKit
 
 /// A captured composition. Reading a mutable section again during an update would
 /// let application state change UIKit's counts in the middle of a batch.
-struct SectionContent: DiffableSection {
-    let id: AnyHashable
-    let cells: [AnyCellPresenter]
-    let supplementaryViews: [AnySupplementaryPresenter]
+public struct SectionContent: DiffableSection {
+    public let id: AnyHashable
+    public let cells: [AnyCellPresenter]
+    public let supplementaryViews: [AnySupplementaryPresenter]
 
-    var items: [AnyCellPresenter] { cells }
+    public var items: [AnyCellPresenter] { cells }
 
-    var structure: SectionStructure<AnyHashable, AnyHashable> {
-        SectionStructure(id: id, items: cells.map(\.id))
-    }
-
-    func isContentEqual(to other: Self) -> Bool {
+    public func isContentEqual(to other: Self) -> Bool {
         guard supplementaryViews.count == other.supplementaryViews.count else { return false }
         return other.supplementaryViews.allSatisfy { presenter in
             guard let previous = supplementary(
@@ -30,7 +26,7 @@ struct SectionContent: DiffableSection {
         }
     }
 
-    var isEmpty: Bool {
+    public var isEmpty: Bool {
         cells.isEmpty && supplementaryViews.isEmpty
     }
 
@@ -41,7 +37,7 @@ struct SectionContent: DiffableSection {
         supplementaryViews = section.supplementaryViews
     }
 
-    init(
+    public init(
         id: AnyHashable,
         cells: [AnyCellPresenter] = [],
         supplementaryViews: [AnySupplementaryPresenter] = []
@@ -51,16 +47,16 @@ struct SectionContent: DiffableSection {
         self.supplementaryViews = supplementaryViews
     }
 
-    func replacingCells(_ cells: [AnyCellPresenter]) -> Self {
+    public func replacingCells(_ cells: [AnyCellPresenter]) -> Self {
         Self(id: id, cells: cells, supplementaryViews: supplementaryViews)
     }
 
-    func cell(at item: Int) -> AnyCellPresenter? {
+    public func cell(at item: Int) -> AnyCellPresenter? {
         guard cells.indices.contains(item) else { return nil }
         return cells[item]
     }
 
-    func supplementary(ofKind kind: String, at item: Int) -> AnySupplementaryPresenter? {
+    public func supplementary(ofKind kind: String, at item: Int) -> AnySupplementaryPresenter? {
         supplementaryViews.first { $0.elementKind == kind && $0.itemIndex == item }
     }
 

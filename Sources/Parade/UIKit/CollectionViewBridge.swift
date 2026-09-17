@@ -2,13 +2,12 @@
 
 import UIKit
 
-/// Owns UIKit's data-source and delegate surface on behalf of the orchestrator.
+/// Owns fixed view creation, bindings and UIKit delegate handling.
 ///
 /// Only scroll and flow-layout callbacks are forwarded. Selection, highlighting,
 /// display lifecycle, and context menus belong to the submitted presenters.
 @MainActor
 final class CollectionViewBridge: NSObject,
-    UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout
 {
     weak var owner: CollectionOrchestrator?
@@ -22,10 +21,9 @@ final class CollectionViewBridge: NSObject,
 
     // MARK: - Initialization
 
-    init(owner: CollectionOrchestrator) {
-        self.owner = owner
+    init(collectionView: UICollectionView) {
         super.init()
-        owner.collectionView.register(
+        collectionView.register(
             EmptyCell.self,
             forCellWithReuseIdentifier: Self.emptyViewReuseIdentifier
         )
@@ -45,67 +43,53 @@ final class CollectionViewBridge: NSObject,
 
         for indexPath in collectionView.indexPathsForVisibleItems {
             guard let cell = collectionView.cellForItem(at: indexPath),
-                  let record = cells[ObjectIdentifier(cell)],
-                  let section = section(at: indexPath.section) else { continue }
-            record.refreshBehaviors(in: section, at: indexPath.item)
+                  let record = cells[ObjectIdentifier(cell)] else { continue }
+            record.refreshBehaviors(
+                presenter: owner.cellPresenter(at: indexPath),
+                sectionId: owner.sectionId(at: indexPath.section)
+            )
         }
 
         // Walk bound views so removed supplementary kinds keep their final callbacks.
         for record in supplementaryViews.values {
-            guard let indexPath = visibleIndexPath(for: record, in: collectionView),
-                  let section = section(at: indexPath.section) else { continue }
-            record.refreshBehaviors(in: section, at: indexPath.item)
+            guard let indexPath = visibleIndexPath(for: record, in: collectionView) else { continue }
+            record.refreshBehaviors(
+                presenter: owner.supplementaryPresenter(ofKind: record.current.presenter.elementKind, at: indexPath),
+                sectionId: owner.sectionId(at: indexPath.section)
+            )
         }
-    }
-
-    /// Releases all bindings when the orchestrator explicitly detaches.
-    /// This does not synthesize display callbacks or business lifecycle events.
-    func reset() {
-        cells.removeAll()
-        supplementaryViews.removeAll()
     }
 }
 
-// MARK: - Data Source
+// MARK: - Fixed View Providers
 
 extension CollectionViewBridge {
-    func numberOfSections(in collectionView: UICollectionView) -> Int {
-        owner?.displaySections.count ?? 0
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        numberOfItemsInSection section: Int
-    ) -> Int {
-        self.section(at: section)?.cells.count ?? 0
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        cellForItemAt indexPath: IndexPath
+    func cell(
+        in collectionView: UICollectionView,
+        at indexPath: IndexPath,
+        presenter: AnyCellPresenter?
     ) -> UICollectionViewCell {
-        guard let owner,
-              let section = section(at: indexPath.section),
-              let presenter = section.cell(at: indexPath.item) else {
+        guard let owner, let presenter,
+              let sectionId = owner.sectionId(at: indexPath.section) else {
             return dequeueEmptyCell(in: collectionView, at: indexPath)
         }
         let cell = owner.registry.cell(for: presenter, in: collectionView, at: indexPath)
-        bind(cell, to: presenter, in: section.id)
+        bind(cell, to: presenter, in: sectionId)
         return cell
     }
 
-    func collectionView(
-        _ collectionView: UICollectionView,
-        viewForSupplementaryElementOfKind kind: String,
-        at indexPath: IndexPath
+    func supplementary(
+        in collectionView: UICollectionView,
+        ofKind kind: String,
+        at indexPath: IndexPath,
+        presenter: AnySupplementaryPresenter?
     ) -> UICollectionReusableView {
-        guard let owner,
-              let section = section(at: indexPath.section),
-              let presenter = section.supplementary(ofKind: kind, at: indexPath.item) else {
+        guard let owner, let presenter,
+              let sectionId = owner.sectionId(at: indexPath.section) else {
             return dequeueEmptySupplementary(ofKind: kind, in: collectionView, at: indexPath)
         }
         let view = owner.registry.supplementary(for: presenter, in: collectionView, at: indexPath)
-        bind(view, to: presenter, in: section.id)
+        bind(view, to: presenter, in: sectionId)
         return view
     }
 }
@@ -199,8 +183,8 @@ extension CollectionViewBridge {
     ) {
         guard let record = cells[ObjectIdentifier(cell)] else { return }
         let binding = record.prepareForDisplay(
-            in: section(at: indexPath.section),
-            at: indexPath.item
+            presenter: owner?.cellPresenter(at: indexPath),
+            sectionId: owner?.sectionId(at: indexPath.section)
         )
         record.beginDisplay(binding, at: indexPath)
         let observer = binding.presenter.underlyingPresenter as? any CellDisplayObserving
@@ -225,9 +209,8 @@ extension CollectionViewBridge {
     ) {
         guard let record = supplementaryViews[ObjectIdentifier(view)] else { return }
         let binding = record.prepareForDisplay(
-            in: section(at: indexPath.section),
-            ofKind: elementKind,
-            at: indexPath.item
+            presenter: owner?.supplementaryPresenter(ofKind: elementKind, at: indexPath),
+            sectionId: owner?.sectionId(at: indexPath.section)
         )
         record.beginDisplay(binding, at: indexPath)
         let observer = binding.presenter.underlyingPresenter as? any SupplementaryDisplayObserving
@@ -464,19 +447,17 @@ private extension CollectionViewBridge {
             }
         }
 
-        func refreshBehaviors(in section: SectionContent, at item: Int) {
-            guard let view,
-                  let presenter = section.cell(at: item),
-                  let binding = current.updating(to: presenter, in: section.id) else { return }
+        func refreshBehaviors(presenter: AnyCellPresenter?, sectionId: AnyHashable?) {
+            guard let view, let presenter, let sectionId,
+                  let binding = current.updating(to: presenter, in: sectionId) else { return }
             updateBinding(binding)
             presenter.setBehaviors(view)
         }
 
-        func prepareForDisplay(in section: SectionContent?, at item: Int) -> CellBinding {
+        func prepareForDisplay(presenter: AnyCellPresenter?, sectionId: AnyHashable?) -> CellBinding {
             let previous = current
-            guard let view, let section,
-                  let presenter = section.cell(at: item),
-                  let binding = previous.updating(to: presenter, in: section.id) else {
+            guard let view, let presenter, let sectionId,
+                  let binding = previous.updating(to: presenter, in: sectionId) else {
                 return previous
             }
             // Prepared views can reappear without another dequeue or visible refresh.
@@ -541,26 +522,20 @@ private extension CollectionViewBridge {
             }
         }
 
-        func refreshBehaviors(in section: SectionContent, at item: Int) {
-            guard let view,
-                  let presenter = section.supplementary(
-                      ofKind: current.presenter.elementKind,
-                      at: item
-                  ),
-                  let binding = current.updating(to: presenter, in: section.id) else { return }
+        func refreshBehaviors(presenter: AnySupplementaryPresenter?, sectionId: AnyHashable?) {
+            guard let view, let presenter, let sectionId,
+                  let binding = current.updating(to: presenter, in: sectionId) else { return }
             updateBinding(binding)
             presenter.setBehaviors(view)
         }
 
         func prepareForDisplay(
-            in section: SectionContent?,
-            ofKind kind: String,
-            at item: Int
+            presenter: AnySupplementaryPresenter?,
+            sectionId: AnyHashable?
         ) -> SupplementaryBinding {
             let previous = current
-            guard let view, let section,
-                  let presenter = section.supplementary(ofKind: kind, at: item),
-                  let binding = previous.updating(to: presenter, in: section.id) else {
+            guard let view, let presenter, let sectionId,
+                  let binding = previous.updating(to: presenter, in: sectionId) else {
                 return previous
             }
             let needsConfiguration = previous.presenter != presenter
@@ -633,11 +608,6 @@ private extension CollectionViewBridge {
         supplementaryViews[key] = SupplementaryRecord(view: view, binding: binding)
     }
 
-    func section(at index: Int) -> SectionContent? {
-        guard let owner, owner.displaySections.indices.contains(index) else { return nil }
-        return owner.displaySections[index]
-    }
-
     func cellContext(
         at indexPath: IndexPath,
         in collectionView: UICollectionView
@@ -649,9 +619,9 @@ private extension CollectionViewBridge {
                 return (binding.presenter, binding.sectionId)
             }
         }
-        guard let section = section(at: indexPath.section),
-              let presenter = section.cell(at: indexPath.item) else { return nil }
-        return (presenter, section.id)
+        guard let sectionId = owner?.sectionId(at: indexPath.section),
+              let presenter = owner?.cellPresenter(at: indexPath) else { return nil }
+        return (presenter, sectionId)
     }
 
     func visibleIndexPath(

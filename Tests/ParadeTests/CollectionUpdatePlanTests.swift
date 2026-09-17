@@ -5,19 +5,19 @@ import UIKit
 @testable import Parade
 
 @Suite("Complete collection planning")
-struct CollectionUpdatePlannerTests {
+struct CollectionUpdatePlanTests {
     @Test("A separate actor can construct, compare, validate and diff local presentation values")
     func planningOutsideMainActor() async throws {
         let result = try await PlanningContext().plan()
         #expect(result.equalValues)
-        #expect(result.stageCount == 1)
+        #expect(result.batchCount == 1)
         #expect(result.insertedItem == 0)
         #expect(result.reconfiguredItem == 1)
     }
 
-    @Test("Every structural stage carries source content until the final content phase")
+    @Test("Every structural batch carries source content until the final content phase")
     @MainActor
-    func stageContentAndFinalCoordinates() throws {
+    func batchContentAndFinalCoordinates() throws {
         let source = try composition([
             section("a", [cell(1, "one"), cell(2, "old two")], header: header("old header")),
             section("removed", [cell(3, "old three")])
@@ -26,12 +26,11 @@ struct CollectionUpdatePlannerTests {
             section("new", [cell(3, "new three"), cell(4, "four")], header: header("new section")),
             section("a", [cell(2, "new two"), cell(1, "one")], header: header("new header"))
         ])
-        let changeset = try CollectionUpdatePlanner().changeset(from: source, to: target)
+        let plan = try CollectionUpdatePlan(from: source, to: target)
 
-        #expect(changeset.stages.count == 3)
-        for stage in changeset.stages {
-            #expect(stage.sections.map(\.structure) == stage.structure.sections)
-            for section in stage.sections {
+        #expect(plan.batches.count == 3)
+        for batch in plan.batches {
+            for section in batch.sections {
                 let metadata =
                     try #require(source.sectionsById[section.id] ?? target.sectionsById[section.id])
                 #expect(section.supplementaryViews == metadata.supplementaryViews)
@@ -43,13 +42,11 @@ struct CollectionUpdatePlannerTests {
                 }
             }
         }
-        #expect(changeset.target.structure == target.structure)
-        #expect(changeset.target.cellsById[3] == cell(3, "new three"))
-        #expect(changeset.content.reconfiguredCells == [path(0, 0), path(1, 0)])
-        #expect(changeset.content.replacedCells.isEmpty)
-        #expect(changeset.content.reloadedSections.isEmpty)
-        #expect(changeset.supplementaryUpdates.map(\.indexPath) == [path(1, 0)])
-        #expect(changeset.supplementaryUpdates.first?.presenter ==
+        #expect(plan.content.reconfiguredCells == [path(0, 0), path(1, 0)])
+        #expect(plan.content.replacedCells.isEmpty)
+        #expect(plan.content.reloadedSections.isEmpty)
+        #expect(plan.content.supplementaryUpdates.map(\.indexPath) == [path(1, 0)])
+        #expect(plan.content.supplementaryUpdates.first?.presenter ==
             target.sections[1].supplementaryViews.first)
     }
 
@@ -66,18 +63,18 @@ struct CollectionUpdatePlannerTests {
             section("a", [AnyCellPresenter(AlternateCell(id: 1))]),
             section("b", [AnyCellPresenter(AlternateCell(id: 2)), cell(3, "new")])
         ])
-        let changeset = try CollectionUpdatePlanner().changeset(from: source, to: target)
+        let plan = try CollectionUpdatePlan(from: source, to: target)
 
-        #expect(changeset.stages.isEmpty)
-        #expect(changeset.content.reloadedSections == IndexSet(integer: 0))
-        #expect(changeset.content.replacedCells == [path(1, 0)])
-        #expect(changeset.content.reconfiguredCells == [path(1, 1)])
-        #expect(changeset.supplementaryUpdates.isEmpty)
+        #expect(plan.batches.isEmpty)
+        #expect(plan.content.reloadedSections == IndexSet(integer: 0))
+        #expect(plan.content.replacedCells == [path(1, 0)])
+        #expect(plan.content.reconfiguredCells == [path(1, 1)])
+        #expect(plan.content.supplementaryUpdates.isEmpty)
     }
 
-    @Test("An equal-content plan still supplies the target's new behavior")
+    @Test("Changed actions with equal content require no view operations")
     @MainActor
-    func equalContentKeepsTargetBehavior() throws {
+    func equalContentNeedsNoViewOperations() throws {
         var actions: [Int] = []
         let first = AnyCellPresenter(ActionCell(
             id: 1,
@@ -87,31 +84,27 @@ struct CollectionUpdatePlannerTests {
         let next = AnyCellPresenter(ActionCell(id: 1, title: "same", action: { actions.append(2) }))
         let source = try composition([section("s", [first])])
         let target = try composition([section("s", [next])])
-        let changeset = try CollectionUpdatePlanner().changeset(from: source, to: target)
+        let plan = try CollectionUpdatePlan(from: source, to: target)
 
         #expect(first == next)
-        #expect(changeset.stages.isEmpty)
-        #expect(changeset.content.isEmpty)
-        #expect(changeset.supplementaryUpdates.isEmpty)
-        let presenter =
-            try #require(changeset.target.cellsById[1]?.underlyingPresenter as? ActionCell)
-        presenter.action()
-        #expect(actions == [2])
+        #expect(plan.batches.isEmpty)
+        #expect(plan.content.isEmpty)
+        #expect(plan.content.supplementaryUpdates.isEmpty)
+        #expect(actions.isEmpty)
     }
 
-    @Test("The same planner plans independent baselines without retaining an earlier target")
+    @Test("Separate update plans use only their supplied baseline")
     func independentBaselines() throws {
-        let planner = CollectionUpdatePlanner()
         let first = try composition([section("first", [cell(1, "first")])])
         let second = try composition([section("second", [cell(2, "second")])])
-        _ = try planner.changeset(from: .empty, to: first)
-        let changeset = try planner.changeset(from: .empty, to: second)
+        _ = try CollectionUpdatePlan(from: .empty, to: first)
+        let plan = try CollectionUpdatePlan(from: .empty, to: second)
 
-        #expect(changeset.stages.count == 1)
-        #expect(changeset.stages.first?.structure.insertedSections == IndexSet(integer: 0))
-        #expect(changeset.stages.first?.sections.map(\.id) == [AnyHashable("second")])
-        #expect(changeset.target.cellsById[1] == nil)
-        #expect(changeset.content.isEmpty)
+        #expect(plan.batches.count == 1)
+        #expect(plan.batches.first?.insertedSections == IndexSet(integer: 0))
+        #expect(plan.batches.first?.sections.map(\.id) == [AnyHashable("second")])
+        #expect(plan.batches.flatMap(\.sections).flatMap(\.cells).map(\.id) == [AnyHashable(2)])
+        #expect(plan.content.isEmpty)
     }
 
     @Test("Invalid captured input retains both conflict locations")
@@ -167,7 +160,7 @@ struct CollectionUpdatePlannerTests {
 // Constructs all presentation values locally; only scalar results cross actors.
 private actor PlanningContext {
     func plan() throws -> (
-        equalValues: Bool, stageCount: Int, insertedItem: Int?, reconfiguredItem: Int?
+        equalValues: Bool, batchCount: Int, insertedItem: Int?, reconfiguredItem: Int?
     ) {
         let old = AnyCellPresenter(ValueCell(id: 1, title: "old"))
         let same = AnyCellPresenter(ValueCell(id: 1, title: "old"))
@@ -176,12 +169,12 @@ private actor PlanningContext {
             AnyCellPresenter(ValueCell(id: 2, title: "inserted")),
             AnyCellPresenter(ValueCell(id: 1, title: "updated"))
         ])])
-        let changeset = try CollectionUpdatePlanner().changeset(from: source, to: target)
+        let plan = try CollectionUpdatePlan(from: source, to: target)
         return (
             old == same,
-            changeset.stages.count,
-            changeset.stages.first?.structure.insertedItems.first?.item,
-            changeset.content.reconfiguredCells.first?.item
+            plan.batches.count,
+            plan.batches.first?.insertedItems.first?.item,
+            plan.content.reconfiguredCells.first?.item
         )
     }
 }

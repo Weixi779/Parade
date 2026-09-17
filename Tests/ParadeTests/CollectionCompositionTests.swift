@@ -4,7 +4,7 @@ import Testing
 import UIKit
 @testable import Parade
 
-struct CollectionInputIndexTests {
+struct CollectionCompositionTests {
     @Test("Captured lookup values preserve section order and their original presenters")
     func lookupValues() throws {
         let sections = [section("b", cells: [2]), section("a", cells: [1, 3])]

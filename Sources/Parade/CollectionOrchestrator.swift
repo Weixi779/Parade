@@ -39,35 +39,58 @@ public final class CollectionOrchestrator {
 
     /// Queries describe the data source version currently used by UIKit. While an
     /// update is in progress this can be an intermediate stage, not the next target.
-    public var sectionIds: [AnyHashable] { displaySections.map(\.id) }
-    public var numberOfSections: Int { displaySections.count }
-    public var numberOfItems: Int { cellLocations.count }
-
-    var displaySections: [SectionContent] = [] {
-        didSet { rebuildLocations() }
-    }
+    public var sectionIds: [AnyHashable] { source.sectionIds }
+    public var numberOfSections: Int { source.numberOfSections }
+    public var numberOfItems: Int { source.numberOfItems }
 
     let registry = ViewRegistry()
-    private lazy var bridge = CollectionViewBridge(owner: self)
+    private let bridge: CollectionViewBridge
+    private let source: any CollectionDataSource
     private var appliedComposition = CollectionComposition.empty
-    private var sectionLocations: [AnyHashable: Int] = [:]
-    private var cellLocations: [AnyHashable: IndexPath] = [:]
     private var pending: [Submission] = []
     private var emptyView: UIView?
     private var previousBackgroundView: UIView?
     private var diagnostics: [CollectionDiagnostic] = []
     private var diagnosticDeliveryScheduled = false
-    private let planner: CollectionUpdatePlanner
 
-    /// Replaces complete difference calculation. Parade retains input capture,
-    /// validation, UIKit batching, content application and update completion.
-    public init(
+    /// Uses Parade's default data source with a replaceable sectioned diff algorithm.
+    public convenience init(
         collectionView: UICollectionView,
         diffAlgorithm: any SectionedDiffAlgorithm = SectionedDiff()
     ) {
+        self.init(collectionView: collectionView) { view, cell, supplementary in
+            DefaultCollectionDataSource(
+                collectionView: view,
+                cellProvider: cell,
+                supplementaryProvider: supplementary,
+                diffAlgorithm: diffAlgorithm
+            )
+        }
+    }
+
+    /// Creates one data-source implementation with Parade's fixed view providers.
+    /// The factory runs once and this orchestrator retains the returned instance;
+    /// do not share it with another collection view or start updates in the factory.
+    public init(
+        collectionView: UICollectionView,
+        makeDataSource: @MainActor (
+            UICollectionView,
+            @escaping CollectionCellProvider,
+            @escaping CollectionSupplementaryProvider
+        ) -> any CollectionDataSource
+    ) {
         self.collectionView = collectionView
-        planner = CollectionUpdatePlanner(algorithm: diffAlgorithm)
-        collectionView.dataSource = bridge
+        let bridge = CollectionViewBridge(collectionView: collectionView)
+        self.bridge = bridge
+        source = makeDataSource(
+            collectionView,
+            { view, path, presenter in bridge.cell(in: view, at: path, presenter: presenter) },
+            { view, kind, path, presenter in
+                bridge.supplementary(in: view, ofKind: kind, at: path, presenter: presenter)
+            }
+        )
+        bridge.owner = self
+        collectionView.dataSource = source.dataSource
         collectionView.delegate = bridge
     }
 
@@ -118,17 +141,15 @@ public final class CollectionOrchestrator {
     }
 
     public func sectionId(at index: Int) -> AnyHashable? {
-        guard displaySections.indices.contains(index) else { return nil }
-        return displaySections[index].id
+        source.sectionId(at: index)
     }
 
     public func sectionIndex<Id: Hashable>(for id: Id) -> Int? {
-        sectionLocations[AnyHashable(id)]
+        source.sectionIndex(for: AnyHashable(id))
     }
 
     public func cellPresenter(at indexPath: IndexPath) -> AnyCellPresenter? {
-        guard displaySections.indices.contains(indexPath.section) else { return nil }
-        return displaySections[indexPath.section].cell(at: indexPath.item)
+        source.cellPresenter(at: indexPath)
     }
 
     public func cellPresenter<Id: Hashable>(for id: Id) -> AnyCellPresenter? {
@@ -137,7 +158,7 @@ public final class CollectionOrchestrator {
     }
 
     public func indexPath<Id: Hashable>(for id: Id) -> IndexPath? {
-        cellLocations[AnyHashable(id)]
+        source.indexPath(for: AnyHashable(id))
     }
 
     /// Use this when the layout's supplementary configuration changes with data.
@@ -146,8 +167,7 @@ public final class CollectionOrchestrator {
         ofKind kind: String,
         at indexPath: IndexPath
     ) -> AnySupplementaryPresenter? {
-        guard displaySections.indices.contains(indexPath.section) else { return nil }
-        return displaySections[indexPath.section].supplementary(ofKind: kind, at: indexPath.item)
+        source.supplementaryPresenter(ofKind: kind, at: indexPath)
     }
 
     public func deselectAllItems(animated: Bool = true) {
@@ -179,104 +199,22 @@ public final class CollectionOrchestrator {
     }
 
     private func apply(_ submission: Submission) async {
-        let target = submission.composition.sections
-        // Registration objects must be created outside UIKit's dequeue callbacks.
-        // Do this at execution, since a submission itself may be made reentrantly
-        // from configuration or display callbacks for the preceding update.
-        for section in target {
+        // Native registrations must exist before any data-source callback. Prepare
+        // at execution so submissions from configure/display callbacks stay safe.
+        for section in submission.composition.sections {
             for presenter in section.cells { registry.prepare(presenter) }
             for presenter in section.supplementaryViews { registry.prepare(presenter) }
         }
-        guard submission.mode == .diff, collectionView.window != nil else {
-            reload(submission.composition)
-            return
-        }
-
-        // UIKit must have consumed the previous counts before the first batch.
-        collectionView.layoutIfNeeded()
-        let changeset: CollectionChangeset
-        do {
-            changeset = try planner.changeset(from: appliedComposition, to: submission.composition)
-        } catch {
-            // Planning has not touched UIKit. The captured target is valid, so
-            // recovery can replace it completely before starting any batch.
-            reload(submission.composition)
-            report(CollectionDiagnostic(
-                reason: .invalidDiff(String(describing: error)),
-                recovery: .reloadedTarget
-            ))
-            return
-        }
-
-        for planned in changeset.stages {
-            let stage = planned.structure
-            await batch(animated: submission.animated) {
-                self.displaySections = planned.sections
-                if !stage.deletedSections.isEmpty {
-                    self.collectionView.deleteSections(stage.deletedSections)
-                }
-                if !stage.insertedSections.isEmpty {
-                    self.collectionView.insertSections(stage.insertedSections)
-                }
-                for move in stage.movedSections {
-                    self.collectionView.moveSection(move.from, toSection: move.to)
-                }
-                if !stage.deletedItems.isEmpty {
-                    self.collectionView.deleteItems(at: stage.deletedItems.map(\.indexPath))
-                }
-                if !stage.insertedItems.isEmpty {
-                    self.collectionView.insertItems(at: stage.insertedItems.map(\.indexPath))
-                }
-                for move in stage.movedItems {
-                    self.collectionView.moveItem(at: move.from.indexPath, to: move.to.indexPath)
-                }
-            }
-        }
-
-        let content = changeset.content
-        if !content.isEmpty {
-            await batch(animated: submission.animated) {
-                self.displaySections = changeset.target.sections
-                if !content.reloadedSections.isEmpty {
-                    self.collectionView.reloadSections(content.reloadedSections)
-                }
-                if !content.replacedCells.isEmpty {
-                    self.collectionView.reloadItems(at: content.replacedCells)
-                }
-                if !content.reconfiguredCells.isEmpty {
-                    self.collectionView.reconfigureItems(at: content.reconfiguredCells)
-                }
-            }
-        } else {
-            displaySections = changeset.target.sections
-        }
-
-        var supplementaryContentChanged = false
-        for update in changeset.supplementaryUpdates {
-            guard let view = collectionView.supplementaryView(
-                forElementKind: update.presenter.elementKind,
-                at: update.indexPath
-            ) else { continue }
-            update.presenter.configure(view)
-            view.setNeedsLayout()
-            supplementaryContentChanged = true
-        }
-        bridge.refreshVisibleBehaviors()
-        if supplementaryContentChanged { collectionView.collectionViewLayout.invalidateLayout() }
-        collectionView.layoutIfNeeded()
-        logger?(
-            "Applied collection diff: \(changeset.stages.count) structural stages, \(content.reconfiguredCells.count) reconfigurations, \(content.replacedCells.count) replacements"
+        let recovered = await source.apply(
+            from: appliedComposition,
+            to: submission.composition,
+            animated: submission.animated,
+            mode: submission.mode
         )
-    }
-
-    private func reload(_ target: CollectionComposition) {
-        displaySections = target.sections
-        collectionView.reloadData()
-        collectionView.layoutIfNeeded()
         bridge.refreshVisibleBehaviors()
-        logger?(
-            "Applied collection reload: \(target.sections.count) sections, \(numberOfItems) cells"
-        )
+        collectionView.layoutIfNeeded()
+        for diagnostic in recovered { report(diagnostic) }
+        logger?("Applied collection update: \(numberOfSections) sections, \(numberOfItems) cells")
     }
 
     /// Bridge diagnostics must not call application code from within dequeue.
@@ -304,32 +242,8 @@ public final class CollectionOrchestrator {
         }
     }
 
-    private func batch(animated: Bool, updates: @escaping @MainActor () -> Void) async {
-        await withCheckedContinuation { continuation in
-            let perform = {
-                self.collectionView.performBatchUpdates(updates) { _ in continuation.resume() }
-            }
-            if animated {
-                perform()
-            } else {
-                UIView.performWithoutAnimation(perform)
-            }
-        }
-    }
-
-    private func rebuildLocations() {
-        sectionLocations.removeAll(keepingCapacity: true)
-        cellLocations.removeAll(keepingCapacity: true)
-        for (section, value) in displaySections.enumerated() {
-            sectionLocations[value.id] = section
-            for (item, presenter) in value.cells.enumerated() {
-                cellLocations[presenter.id] = IndexPath(item: item, section: section)
-            }
-        }
-    }
-
     private func refreshEmptyView() {
-        let isEmpty = displaySections.allSatisfy(\.isEmpty)
+        let isEmpty = source.isEmpty
         guard isEmpty, let provider = emptyViewProvider else {
             removeEmptyView()
             return
@@ -347,8 +261,4 @@ public final class CollectionOrchestrator {
         emptyView = nil
         previousBackgroundView = nil
     }
-}
-
-private extension ItemLocation {
-    var indexPath: IndexPath { IndexPath(item: item, section: section) }
 }
