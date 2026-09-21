@@ -29,14 +29,20 @@ jobs:
         env:
           DEVELOPER_DIR: /Applications/Xcode_16.0.app/Contents/Developer
         run: |
+          sudo xcode-select --switch "$DEVELOPER_DIR"
           xcodebuild -version
+          sudo xcodebuild -runFirstLaunch
+          xcodebuild -downloadPlatform iOS
           xcodebuild -scheme Parade -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/ParadeMinimum" \
             CODE_SIGNING_ALLOWED=NO build
 
       - name: Run unit and UIKit integration tests
         run: |
+          sudo xcode-select --switch "$DEVELOPER_DIR"
           xcodebuild -version
+          sudo xcodebuild -runFirstLaunch
+          xcodebuild -downloadPlatform iOS
           xcodebuild -scheme Parade \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
             -derivedDataPath "$RUNNER_TEMP/ParadeTests" \
