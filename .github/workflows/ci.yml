@@ -29,13 +29,10 @@ jobs:
         env:
           DEVELOPER_DIR: /Applications/Xcode_16.0.app/Contents/Developer
         run: |
-          sudo xcode-select --switch "$DEVELOPER_DIR"
           xcodebuild -version
-          sudo xcodebuild -runFirstLaunch
-          xcodebuild -downloadPlatform iOS
-          xcodebuild -scheme Parade -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/ParadeMinimum" \
-            CODE_SIGNING_ALLOWED=NO build
+          PARADE_IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun swift build --scratch-path "$RUNNER_TEMP/ParadeMinimum" \
+            --triple arm64-apple-ios16.0 --sdk "$PARADE_IOS_SDK"
 
       - name: Run unit and UIKit integration tests
         run: |
