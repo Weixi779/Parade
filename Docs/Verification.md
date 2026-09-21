@@ -101,7 +101,7 @@ The [CI workflow](../.github/workflows/ci.yml) builds with Xcode 16.0, then runs
 full test suite on Xcode 16.4 / iOS 18.5 and builds the public-API example app.
 The minimum-toolchain check uses SwiftPM with Xcode 16.0's device SDK and an
 `arm64-apple-ios16.0` target, without requiring a simulator runtime. The UIKit test
-step selects Xcode 16.4 explicitly and installs its matching iOS platform.
+step selects Xcode 16.4 explicitly and uses the runner's preinstalled iOS 18.5 runtime.
 It runs on main-branch pushes, pull requests, and manual dispatch, and retains test
 result bundles for seven days. Example UI smoke checks are performed locally;
 CI compiles the examples without launching them. Consult the

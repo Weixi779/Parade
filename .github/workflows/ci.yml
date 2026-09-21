@@ -39,7 +39,7 @@ jobs:
           sudo xcode-select --switch "$DEVELOPER_DIR"
           xcodebuild -version
           sudo xcodebuild -runFirstLaunch
-          xcodebuild -downloadPlatform iOS
+          xcrun simctl list runtimes
           xcodebuild -scheme Parade \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
             -derivedDataPath "$RUNNER_TEMP/ParadeTests" \
