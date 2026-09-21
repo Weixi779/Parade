@@ -10,6 +10,10 @@ public enum CollectionUpdateMode: Sendable {
 
 /// Invalid identity or supplementary placement is rejected before UIKit is mutated.
 public enum CollectionUpdateError: Error, Equatable, Sendable {
+    case updateChannelClosed
+    case sectionNotAttached
+    case sectionAlreadyAttached
+    case staleSectionInstance(String)
     case duplicateSectionId(String)
     case duplicateCellId(String)
     case duplicateSupplementaryId(section: String, kind: String, id: String)

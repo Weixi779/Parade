@@ -12,7 +12,7 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
     private var sectionLocations: [AnyHashable: Int] = [:]
     private var cellLocations: [AnyHashable: IndexPath] = [:]
 
-    var sections: [SectionContent] = [] {
+    var sections: [CapturedSection] = [] {
         didSet {
             sectionLocations.removeAll(keepingCapacity: true)
             cellLocations.removeAll(keepingCapacity: true)
@@ -47,6 +47,12 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
     public func sectionId(at index: Int) -> AnyHashable? { section(at: index)?.id }
     public func sectionIndex(for id: AnyHashable) -> Int? { sectionLocations[id] }
     public func indexPath(for id: AnyHashable) -> IndexPath? { cellLocations[id] }
+
+    public func layoutSection(
+        at index: Int, environment: any NSCollectionLayoutEnvironment
+    ) -> NSCollectionLayoutSection? {
+        section(at: index)?.makeLayout(in: environment)
+    }
 
     public func cellPresenter(at indexPath: IndexPath) -> AnyCellPresenter? {
         section(at: indexPath.section)?.cell(at: indexPath.item)
@@ -83,6 +89,7 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
         for batch in plan.batches {
             await performBatch(animated: animated) {
                 self.sections = batch.sections
+                self.collectionView.collectionViewLayout.invalidateLayout()
                 if !batch.deletedSections.isEmpty {
                     self.collectionView.deleteSections(batch.deletedSections)
                 }
@@ -108,6 +115,9 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
         if !content.isEmpty {
             await performBatch(animated: animated) {
                 self.sections = target.sections
+                if content.hasLayoutUpdates {
+                    self.collectionView.collectionViewLayout.invalidateLayout()
+                }
                 if !content.reloadedSections.isEmpty {
                     self.collectionView.reloadSections(content.reloadedSections)
                 }
@@ -146,12 +156,13 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
         supplementaryProvider(collectionView, kind, indexPath, supplementaryPresenter(ofKind: kind, at: indexPath))
     }
 
-    private func section(at index: Int) -> SectionContent? {
+    private func section(at index: Int) -> CapturedSection? {
         sections.indices.contains(index) ? sections[index] : nil
     }
 
     private func reload(_ target: CollectionComposition) {
         sections = target.sections
+        collectionView.collectionViewLayout.invalidateLayout()
         collectionView.reloadData()
         collectionView.layoutIfNeeded()
     }

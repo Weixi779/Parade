@@ -1,22 +1,44 @@
-//
-//  SectionPresenter.swift
-//  Parade
-//
-//  Created by weixi on 2026/9/17.
-//
+// Created by weixi on 2026/09/21.
 
-/// The current presentation of one collection section.
-///
-/// A section can contain any number of cell types, including no cells. The
-/// application owns its state; Parade captures its composition when submitted.
-public protocol SectionPresenter {
+import Foundation
+
+/// A stable business module corresponding to one UICollectionView section.
+/// Own requests and listeners here; submit immutable display versions with update().
+@MainActor
+public protocol SectionPresenter: AnyObject {
     associatedtype Id: Hashable
+    associatedtype Presentation: SectionPresentation
 
     var id: Id { get }
-    @MainActor var cells: [AnyCellPresenter] { get }
-    @MainActor var supplementaryViews: [AnySupplementaryPresenter] { get }
+    var updates: SectionUpdateContext { get }
+    func capturePresentation() -> Presentation
 }
 
 public extension SectionPresenter {
-    @MainActor var supplementaryViews: [AnySupplementaryPresenter] { [] }
+    /// Captures now, then awaits this operation's content, layout and binding updates.
+    func update(animated: Bool = true, mode: CollectionUpdateMode = .diff) async throws {
+        try await updates.update(animated: animated, mode: mode)
+    }
+}
+
+/// Own one context per section instance. The collection binds it on successful
+/// attachment and disconnects it on removal. It never retains the collection.
+@MainActor
+public final class SectionUpdateContext {
+    public init() {}
+
+    public var isAttached: Bool { owner != nil && submit != nil }
+    weak var owner: AnyObject?
+    var submit: (@MainActor (Bool, CollectionUpdateMode) async throws -> Void)?
+
+    public func update(animated: Bool = true, mode: CollectionUpdateMode = .diff) async throws {
+        guard isAttached, let submit else { throw CollectionUpdateError.sectionNotAttached }
+        try await submit(animated, mode)
+    }
+
+    func disconnect(from owner: AnyObject) {
+        guard self.owner === owner else { return }
+        self.owner = nil
+        submit = nil
+    }
 }

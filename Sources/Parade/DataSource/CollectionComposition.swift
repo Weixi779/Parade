@@ -5,8 +5,8 @@ import Foundation
 /// A captured, validated input. Only these compositions may become an applied
 /// baseline or a reload target; intermediate contents belong to update batches.
 public struct CollectionComposition {
-    public let sections: [SectionContent]
-    public let sectionsById: [AnyHashable: SectionContent]
+    public let sections: [CapturedSection]
+    public let sectionsById: [AnyHashable: CapturedSection]
     public let cellsById: [AnyHashable: AnyCellPresenter]
 
     public static var empty: Self { Self() }
@@ -18,7 +18,7 @@ public struct CollectionComposition {
     }
 
     /// Validate each section completely before the next, preserving error order.
-    init(_ sections: [SectionContent]) throws(ValidationFailure) {
+    init(_ sections: [CapturedSection]) throws(ValidationFailure) {
         var sectionLocations = [AnyHashable: Int](minimumCapacity: sections.count)
         var cellLocations: [AnyHashable: ItemLocation] = [:]
         for (sectionIndex, section) in sections.enumerated() {
@@ -72,7 +72,7 @@ private extension CollectionComposition {
     }
 
     static func validateSupplementaries(
-        in section: SectionContent,
+        in section: CapturedSection,
         at sectionIndex: Int
     ) throws(ValidationFailure) {
         let sectionDescription = String(describing: section.id)

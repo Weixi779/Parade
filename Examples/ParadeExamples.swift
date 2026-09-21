@@ -9,15 +9,18 @@ import Parade
 import UIKit
 
 /// Add this file to an iOS app target and present either example controller.
-/// The application creates the collection view, layout, and business state.
+/// Section owners supply captured native layouts and update their own presentation.
 @MainActor
 public final class IMExampleViewController: UIViewController {
-    private var days = MessageDay.samples
-    private var expandedMessageIds: Set<Int> = []
+    private lazy var sections = MessageDay.samples.map { day in
+        MessageDayPresenter(day: day) { [weak self] error in
+            self?.navigationItem.prompt = String(describing: error)
+        }
+    }
 
     private lazy var collectionView = UICollectionView(
         frame: .zero,
-        collectionViewLayout: makeLayout()
+        collectionViewLayout: UICollectionViewLayout()
     )
     private lazy var orchestrator = CollectionOrchestrator(collectionView: collectionView)
 
@@ -29,50 +32,22 @@ public final class IMExampleViewController: UIViewController {
             title: "Receive",
             primaryAction: UIAction { [weak self] _ in self?.receiveMessage() }
         )
-        render(animated: false)
-    }
-
-    private func render(animated: Bool = true) {
-        let sections: [any SectionPresenter] = days.map { day in
-            MessageDayPresenter(
-                day: day,
-                expandedMessageIds: expandedMessageIds
-            ) { [weak self] id in
-                self?.toggleExpansion(id)
-            }
+        Task {
+            do { try await orchestrator.setSections(sections, animated: false) }
+            catch { navigationItem.prompt = String(describing: error) }
         }
-        orchestrator.apply(sections, animated: animated) { [weak self] result in
-            if case .failure(let error) = result {
-                self?.navigationItem.prompt = String(describing: error)
-            }
-        }
-    }
-
-    private func toggleExpansion(_ id: Int) {
-        if expandedMessageIds.contains(id) {
-            expandedMessageIds.remove(id)
-        } else {
-            expandedMessageIds.insert(id)
-        }
-        render()
     }
 
     private func receiveMessage() {
-        let nextId = (days.flatMap(\.messages).map(\.id).max() ?? 0) + 1
-        days[days.count - 1].messages.append(Message(
+        let nextId = (sections.flatMap { $0.day.messages }.map(\.id).max() ?? 0) + 1
+        let message = Message(
             id: nextId,
             content: .text("New message \(nextId)"),
             delivery: "Delivered"
-        ))
-        render()
-    }
-
-    private func makeLayout() -> UICollectionViewLayout {
-        UICollectionViewCompositionalLayout { [weak self] index, _ in
-            guard let self, self.orchestrator.sectionId(at: index)?.base is String else {
-                return nil
-            }
-            return makeVerticalSection(estimatedHeight: 96, hasHeader: true)
+        )
+        Task {
+            do { try await sections.last?.receive(message) }
+            catch { navigationItem.prompt = String(describing: error) }
         }
     }
 }
@@ -83,7 +58,7 @@ public final class AppStoreExampleViewController: UIViewController {
 
     private lazy var collectionView = UICollectionView(
         frame: .zero,
-        collectionViewLayout: makeLayout()
+        collectionViewLayout: UICollectionViewLayout()
     )
     // This example injects Apple's implementation; the IM example uses Parade's default.
     private lazy var orchestrator = CollectionOrchestrator(collectionView: collectionView) {
@@ -99,10 +74,13 @@ public final class AppStoreExampleViewController: UIViewController {
         super.viewDidLoad()
         title = "Discover"
         installCollectionView(collectionView, in: view)
-        render(animated: false)
+        Task {
+            do { try await orchestrator.setSections(sections, animated: false) }
+            catch { navigationItem.prompt = String(describing: error) }
+        }
     }
 
-    private func render(animated: Bool = true) {
+    private lazy var sections: [any StoreSectionPresenter] = {
         let install: @MainActor (String) -> Void = { [weak self] in self?.installOrOpen($0) }
         let open: @MainActor (String) -> Void = { [weak self] in
             self?.navigationItem.prompt = "Selected \($0)"
@@ -110,7 +88,7 @@ public final class AppStoreExampleViewController: UIViewController {
 
         // Each section keeps a concrete, homogeneous model collection internally.
         // Type erasure occurs only when the presenters enter Parade's composition.
-        let sections: [any SectionPresenter] = [
+        return [
             FeaturedSectionPresenter(
                 model: page.featured,
                 installedIds: page.installedIds,
@@ -130,55 +108,22 @@ public final class AppStoreExampleViewController: UIViewController {
                 open: open
             ),
         ]
-        orchestrator.apply(sections, animated: animated) { [weak self] result in
-            if case .failure(let error) = result {
-                self?.navigationItem.prompt = String(describing: error)
-            }
-        }
-    }
+    }()
 
     private func installOrOpen(_ appId: String) {
         if page.installedIds.contains(appId) {
             navigationItem.prompt = "Opening \(appId)"
         } else {
             page.installedIds.insert(appId)
-            // One application-owned state change refreshes every occurrence.
-            render()
+            for section in sections { section.installedIds = page.installedIds }
+            Task {
+                do { try await orchestrator.update(sections) }
+                catch { navigationItem.prompt = String(describing: error) }
+            }
         }
     }
 
-    private func makeLayout() -> UICollectionViewLayout {
-        UICollectionViewCompositionalLayout { [weak self] index, _ in
-            guard let self,
-                  let id = self.orchestrator.sectionId(at: index)?.base as? StoreSectionId else {
-                return nil
-            }
-            switch id {
-            case .featured:
-                let item = NSCollectionLayoutItem(layoutSize: .init(
-                    widthDimension: .fractionalWidth(1),
-                    heightDimension: .fractionalHeight(1)
-                ))
-                let group = NSCollectionLayoutGroup.horizontal(
-                    layoutSize: .init(
-                        widthDimension: .fractionalWidth(0.86),
-                        heightDimension: .absolute(210)
-                    ),
-                    subitems: [item]
-                )
-                let section = NSCollectionLayoutSection(group: group)
-                section.orthogonalScrollingBehavior = .groupPaging
-                section.interGroupSpacing = 12
-                section.contentInsets = .init(top: 8, leading: 16, bottom: 24, trailing: 16)
-                section.boundarySupplementaryItems = [makeHeader()]
-                return section
-            case .ranking:
-                return makeVerticalSection(estimatedHeight: 92, hasHeader: true)
-            case .recommendations:
-                return makeVerticalSection(estimatedHeight: 130, hasHeader: true)
-            }
-        }
-    }
+
 }
 
 // MARK: - Application models
@@ -295,10 +240,37 @@ private struct StoreOccurrenceId: Hashable {
 
 // MARK: - Sections
 
-private struct MessageDayPresenter: SectionPresenter {
-    let day: MessageDay
-    let expandedMessageIds: Set<Int>
-    let toggleExpansion: @MainActor (Int) -> Void
+@MainActor
+private final class MessageDayPresenter: SectionPresenter {
+    let updates = SectionUpdateContext()
+    private(set) var day: MessageDay
+    private var expandedMessageIds: Set<Int> = []
+    private let onError: @MainActor (any Error) -> Void
+
+    init(day: MessageDay, onError: @escaping @MainActor (any Error) -> Void) {
+        self.day = day
+        self.onError = onError
+    }
+
+    func receive(_ message: Message) async throws {
+        day.messages.append(message)
+        try await update()
+    }
+
+    private func toggleExpansion(_ id: Int) {
+        if expandedMessageIds.contains(id) { expandedMessageIds.remove(id) }
+        else { expandedMessageIds.insert(id) }
+        Task {
+            do { try await update() }
+            catch { onError(error) }
+        }
+    }
+
+    func capturePresentation() -> DefaultSectionPresentation {
+        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+            makeVerticalSection(estimatedHeight: 96, hasHeader: true)
+        }
+    }
 
     var id: String { day.id }
     var cells: [AnyCellPresenter] {
@@ -310,7 +282,7 @@ private struct MessageDayPresenter: SectionPresenter {
                     text: text,
                     delivery: message.delivery,
                     expanded: expandedMessageIds.contains(message.id),
-                    toggle: { toggleExpansion(message.id) }
+                    toggle: { [weak self] in self?.toggleExpansion(message.id) }
                 ))
             case let .attachment(title, symbol):
                 return AnyCellPresenter(AttachmentMessagePresenter(
@@ -328,11 +300,51 @@ private struct MessageDayPresenter: SectionPresenter {
     }
 }
 
-private struct FeaturedSectionPresenter: SectionPresenter {
+@MainActor
+private protocol StoreSectionPresenter: SectionPresenter {
+    var installedIds: Set<String> { get set }
+}
+
+@MainActor
+private final class FeaturedSectionPresenter: StoreSectionPresenter {
+    let updates = SectionUpdateContext()
     let model: FeaturedSectionModel
-    let installedIds: Set<String>
+    var installedIds: Set<String>
     let install: @MainActor (String) -> Void
     let open: @MainActor (String) -> Void
+
+    init(
+        model: FeaturedSectionModel, installedIds: Set<String>,
+        install: @escaping @MainActor (String) -> Void,
+        open: @escaping @MainActor (String) -> Void
+    ) {
+        self.model = model
+        self.installedIds = installedIds
+        self.install = install
+        self.open = open
+    }
+
+    func capturePresentation() -> DefaultSectionPresentation {
+        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+            let item = NSCollectionLayoutItem(layoutSize: .init(
+                widthDimension: .fractionalWidth(1),
+                heightDimension: .fractionalHeight(1)
+            ))
+            let group = NSCollectionLayoutGroup.horizontal(
+                layoutSize: .init(
+                    widthDimension: .fractionalWidth(0.86),
+                    heightDimension: .absolute(210)
+                ),
+                subitems: [item]
+            )
+            let section = NSCollectionLayoutSection(group: group)
+            section.orthogonalScrollingBehavior = .groupPaging
+            section.interGroupSpacing = 12
+            section.contentInsets = .init(top: 8, leading: 16, bottom: 24, trailing: 16)
+            section.boundarySupplementaryItems = [makeHeader()]
+            return section
+        }
+    }
 
     var id: StoreSectionId { .featured }
     var cells: [AnyCellPresenter] {
@@ -340,8 +352,8 @@ private struct FeaturedSectionPresenter: SectionPresenter {
             AnyCellPresenter(FeaturedCellPresenter(
                 story: story,
                 installed: installedIds.contains(story.app.id),
-                install: { install(story.app.id) },
-                open: { open(story.app.id) }
+                install: { [install] in install(story.app.id) },
+                open: { [open] in open(story.app.id) }
             ))
         }
     }
@@ -351,11 +363,30 @@ private struct FeaturedSectionPresenter: SectionPresenter {
     }
 }
 
-private struct RankingSectionPresenter: SectionPresenter {
+@MainActor
+private final class RankingSectionPresenter: StoreSectionPresenter {
+    let updates = SectionUpdateContext()
     let model: RankingSectionModel
-    let installedIds: Set<String>
+    var installedIds: Set<String>
     let install: @MainActor (String) -> Void
     let open: @MainActor (String) -> Void
+
+    init(
+        model: RankingSectionModel, installedIds: Set<String>,
+        install: @escaping @MainActor (String) -> Void,
+        open: @escaping @MainActor (String) -> Void
+    ) {
+        self.model = model
+        self.installedIds = installedIds
+        self.install = install
+        self.open = open
+    }
+
+    func capturePresentation() -> DefaultSectionPresentation {
+        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+            return makeVerticalSection(estimatedHeight: 92, hasHeader: true)
+        }
+    }
 
     var id: StoreSectionId { .ranking }
     var cells: [AnyCellPresenter] {
@@ -364,8 +395,8 @@ private struct RankingSectionPresenter: SectionPresenter {
                 app: app,
                 rank: offset + 1,
                 installed: installedIds.contains(app.app.id),
-                install: { install(app.app.id) },
-                open: { open(app.app.id) }
+                install: { [install] in install(app.app.id) },
+                open: { [open] in open(app.app.id) }
             ))
         }
     }
@@ -375,11 +406,30 @@ private struct RankingSectionPresenter: SectionPresenter {
     }
 }
 
-private struct RecommendationSectionPresenter: SectionPresenter {
+@MainActor
+private final class RecommendationSectionPresenter: StoreSectionPresenter {
+    let updates = SectionUpdateContext()
     let model: RecommendationSectionModel
-    let installedIds: Set<String>
+    var installedIds: Set<String>
     let install: @MainActor (String) -> Void
     let open: @MainActor (String) -> Void
+
+    init(
+        model: RecommendationSectionModel, installedIds: Set<String>,
+        install: @escaping @MainActor (String) -> Void,
+        open: @escaping @MainActor (String) -> Void
+    ) {
+        self.model = model
+        self.installedIds = installedIds
+        self.install = install
+        self.open = open
+    }
+
+    func capturePresentation() -> DefaultSectionPresentation {
+        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+            return makeVerticalSection(estimatedHeight: 130, hasHeader: true)
+        }
+    }
 
     var id: StoreSectionId { .recommendations }
     var cells: [AnyCellPresenter] {
@@ -387,8 +437,8 @@ private struct RecommendationSectionPresenter: SectionPresenter {
             AnyCellPresenter(RecommendationCellPresenter(
                 app: app,
                 installed: installedIds.contains(app.app.id),
-                install: { install(app.app.id) },
-                open: { open(app.app.id) }
+                install: { [install] in install(app.app.id) },
+                open: { [open] in open(app.app.id) }
             ))
         }
     }

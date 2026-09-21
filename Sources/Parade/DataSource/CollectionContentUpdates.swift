@@ -8,9 +8,10 @@ struct CollectionContentUpdates {
     var replacedCells: [IndexPath] = []
     var reconfiguredCells: [IndexPath] = []
     var supplementaryUpdates: [(indexPath: IndexPath, presenter: AnySupplementaryPresenter)] = []
+    var hasLayoutUpdates = false
 
     var isEmpty: Bool {
-        reloadedSections.isEmpty && replacedCells.isEmpty && reconfiguredCells.isEmpty
+        reloadedSections.isEmpty && replacedCells.isEmpty && reconfiguredCells.isEmpty && !hasLayoutUpdates
     }
 
     init(
@@ -21,6 +22,7 @@ struct CollectionContentUpdates {
     ) {
         for (sectionIndex, section) in target.sections.enumerated() {
             if let previous = source.sectionsById[section.id] {
+                if previous.layout !== section.layout { hasLayoutUpdates = true }
                 // A new supplementary topology or view class replaces the section.
                 guard previous.hasCompatibleSupplementaries(with: section) else {
                     reloadedSections.insert(sectionIndex)

@@ -6,10 +6,17 @@ import UIKit
 
 /// A captured composition. Reading a mutable section again during an update would
 /// let application state change UIKit's counts in the middle of a batch.
-public struct SectionContent: DiffableSection {
+public struct CapturedSection: DiffableSection {
     public let id: AnyHashable
     public let cells: [AnyCellPresenter]
     public let supplementaryViews: [AnySupplementaryPresenter]
+    let layout: CapturedCompositionalLayout
+
+    /// Resolves the layout of this captured version, including intermediate stages.
+    @MainActor
+    public func makeLayout(in environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
+        layout.makeLayout(environment)
+    }
 
     public var items: [AnyCellPresenter] { cells }
 
@@ -31,24 +38,38 @@ public struct SectionContent: DiffableSection {
     }
 
     @MainActor
-    init<S: SectionPresenter>(_ section: S) {
+    init<S: SectionPresenter>(capturing section: S) {
+        let presentation = section.capturePresentation()
         id = AnyHashable(section.id)
-        cells = section.cells
-        supplementaryViews = section.supplementaryViews
+        cells = presentation.cells
+        supplementaryViews = presentation.supplementaryViews
+        layout = CapturedCompositionalLayout(presentation)
     }
 
     public init(
         id: AnyHashable,
         cells: [AnyCellPresenter] = [],
-        supplementaryViews: [AnySupplementaryPresenter] = []
+        supplementaryViews: [AnySupplementaryPresenter] = [],
+        layout: @escaping @MainActor (any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection
     ) {
         self.id = id
         self.cells = cells
         self.supplementaryViews = supplementaryViews
+        self.layout = CapturedCompositionalLayout(makeLayout: layout)
+    }
+
+    private init(
+        id: AnyHashable, cells: [AnyCellPresenter],
+        supplementaryViews: [AnySupplementaryPresenter], layout: CapturedCompositionalLayout
+    ) {
+        self.id = id
+        self.cells = cells
+        self.supplementaryViews = supplementaryViews
+        self.layout = layout
     }
 
     public func replacingCells(_ cells: [AnyCellPresenter]) -> Self {
-        Self(id: id, cells: cells, supplementaryViews: supplementaryViews)
+        Self(id: id, cells: cells, supplementaryViews: supplementaryViews, layout: layout)
     }
 
     public func cell(at item: Int) -> AnyCellPresenter? {

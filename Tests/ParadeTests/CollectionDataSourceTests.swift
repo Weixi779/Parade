@@ -23,7 +23,7 @@ struct CollectionDataSourceTests {
         var completed: [Int] = []
         await withCheckedContinuation { started in
             probe.didStart = { started.resume() }
-            owner.apply([PublicSection("first", [1])], animated: false) { _ in completed.append(1) }
+            owner.setSections([PublicSection("first", [1])], animated: false) { _ in completed.append(1) }
         }
         #expect(owner.isApplying)
         #expect(owner.appliedRevision == 0)
@@ -32,7 +32,7 @@ struct CollectionDataSourceTests {
         #expect(completed.isEmpty)
 
         await withCheckedContinuation { finished in
-            owner.apply([PublicSection("second", [2, 3])], animated: false) { _ in
+            owner.setSections([PublicSection("second", [2, 3])], animated: false) { _ in
                 completed.append(2)
                 finished.resume()
             }
@@ -76,14 +76,14 @@ struct CollectionDataSourceTests {
             retained = source
             return source
         }
-        try await owner?.apply([PublicSection("s", [1, 2])], animated: false)
-        try await owner?.apply([PublicSection("s", [2, 1])], animated: false)
+        try await owner?.setSections([PublicSection("s", [1, 2])], animated: false)
+        try await owner?.setSections([PublicSection("s", [2, 1])], animated: false)
         #expect(owner?.indexPath(for: PublicID(1)) == .init(item: 1, section: 0))
-        try await owner?.apply([], animated: false)
+        try await owner?.setSections([], animated: false)
         #expect(owner?.indexPath(for: PublicID(1)) == nil)
-        try await owner?.apply([PublicSection("s", [1])], animated: false)
+        try await owner?.setSections([PublicSection("s", [1])], animated: false)
         #expect(owner?.indexPath(for: PublicID(1)) == .init(item: 0, section: 0))
-        try await owner?.apply([PublicSection("reloaded", [2])], animated: false, mode: .reload)
+        try await owner?.setSections([PublicSection("reloaded", [2])], animated: false, mode: .reload)
         #expect(owner?.indexPath(for: PublicID(1)) == nil)
         #expect(owner?.indexPath(for: PublicID(2)) == .init(item: 0, section: 0))
         #expect(owner?.sectionIndex(for: "s") == nil)
@@ -151,6 +151,11 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
         return content.sections[indexPath.section].supplementary(ofKind: kind, at: indexPath.item)
     }
 
+    func layoutSection(at index: Int, environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? {
+        guard content.sections.indices.contains(index) else { return nil }
+        return content.sections[index].makeLayout(in: environment)
+    }
+
     func apply(
         from source: CollectionComposition,
         to target: CollectionComposition,
@@ -200,7 +205,10 @@ private final class PublicID: Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(value) }
 }
 
-private struct PublicSection: SectionPresenter {
+@MainActor
+private final class PublicSection: SectionPresenter {
+    let updates = SectionUpdateContext()
+    func capturePresentation() -> DefaultSectionPresentation { testPresentation(cells: cells) }
     let id: String
     let cells: [AnyCellPresenter]
     @MainActor

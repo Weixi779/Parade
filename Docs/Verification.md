@@ -1,9 +1,51 @@
 # Verification
 
-This report describes the 0.1.0 implementation. Earlier refactoring runs are
-preserved in Git history; the counts below refer to the final implementation.
+## Current breaking API — 2026-09-21
 
-## Local release verification
+Verified locally with Xcode 27.0, Swift 6 language mode, and an iPhone 18 Pro /
+iOS 27.0 simulator. The deployment target remains iOS 16.
+
+| Check | Result |
+| --- | --- |
+| Package build and full Swift Testing/UIKit regression | 89 tests in 10 suites passed |
+| Section update and captured-layout integration | Passed with both supplied data sources |
+| Standalone IM and Store examples importing public API | Built successfully |
+| Example UIKit counts, cell types and shared installation action | All 10 smoke checks passed |
+
+The full test run took 6.571 seconds. Its result bundle is
+`/private/tmp/parade-initial-order-fixed.xcresult` (89 tests, zero failures). The example
+build and smoke checks preceded the latest membership-validation fix; the full test
+run includes it.
+The example report is written to the simulator application's
+`Documents/smoke.json`. Xcode emitted an App Intents metadata extraction warning;
+the standalone example build emitted a linker sysroot warning.
+
+New coverage includes layout-only changes without cell reconfiguration, captured
+layout inputs, independent queued section updates, reorder preserving accepted
+content, stale-instance rejection after same-ID replacement, execution-time global
+ID conflicts followed by successful updates, atomic cell transfers, attachment
+reservation during suspended application, queued removal followed by reattachment
+of the same instance, and structural-stage layout identity.
+The previous Flow delegate forwarding test was removed with that unsupported API.
+The reattachment regression first failed on both supplied data sources, displaying
+item 1 at height 44 instead of the submitted item 2 at height 96. After fixing capture,
+it passes even when live state changes again to item 3 at height 144 before execution.
+The reorder regression also verifies that a surviving section's invalid unsubmitted
+content cannot reject the operation or replace its accepted presentation.
+Initial attachment is covered both while executing and while still queued: a later
+reorder ignores unused invalid live content and preserves accepted layout on both
+data sources. Content rejection is checked in FIFO order, with diagnostics and
+subsequent valid operations preserved.
+
+These results validate this local implementation. They do not establish iOS 16
+runtime behavior, a CI result, device performance, or animation quality. The limits
+and reproduction instructions below continue to apply.
+
+## Published 0.1.0 verification
+
+The following historical results describe the published 0.1.0 implementation.
+
+### Local release verification
 
 Verified on 2026-09-17 with Xcode 27.0 (27A266a), Swift 6 language mode,
 and an iPhone 18 Pro / iOS 27.0 simulator:

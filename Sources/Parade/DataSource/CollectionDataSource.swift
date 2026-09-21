@@ -23,6 +23,12 @@ public protocol CollectionDataSource: AnyObject {
     /// The stable native object installed as UICollectionView.dataSource.
     var dataSource: any UICollectionViewDataSource { get }
 
+    /// Uses the same captured version and section indexing as the current views.
+    func layoutSection(
+        at index: Int,
+        environment: any NSCollectionLayoutEnvironment
+    ) -> NSCollectionLayoutSection?
+
     /// Queries describe the version currently used by the native data source,
     /// including intermediate stages. They must agree with its counts and views.
     var sectionIds: [AnyHashable] { get }

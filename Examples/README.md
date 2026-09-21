@@ -83,19 +83,21 @@ the initializer's factory closure. Both use the same Presenter protocols, view
 providers, delegate handling, and public completion contract. The smoke test exercises
 both implementations in the same app, including content updates on the Apple path.
 
-The controllers own application state, the collection view, and the compositional
-layout. Each section presenter produces the current typed cell presenters and a
-header. The layout resolves section identity through `orchestrator.sectionId(at:)`,
-which refers to the composition currently being displayed.
+The controllers create collection views; `CollectionOrchestrator` installs their
+compositional layouts. Each stable section owns a `SectionUpdateContext` and captures
+its cells, header and native layout together. There is no page-level layout router.
 
-The same app appears in several Store sections. Its domain Id is shared, while
-`StoreOccurrenceId(section:appId:)` identifies each cell occurrence. An installation
-change therefore updates multiple independently presented cells.
+The IM section owns its messages and expansion state. Receive and expand operations
+call that section's `update()` without rebuilding the other day. The Store controller
+owns shared installation state, passes it to its retained sections, then calls
+`orchestrator.update(sections)` once to update all occurrences atomically.
+`setSections` establishes membership; reusing the same instances preserves their
+accepted content unless they explicitly submit an update.
 
-The IM controller keeps expansion state outside the cell and presenter. New
-presenters include that state in content comparison. `configure` writes visible
-content; `setBehaviors` replaces the existing action closure, so an equal-content
-update can still replace behavior without adding duplicate UIKit actions.
+The same app appears in several Store sections. Its domain ID is shared, while
+`StoreOccurrenceId(section:appId:)` identifies each cell occurrence. Cell presenters
+remain immutable display values; `configure` writes visual content and `setBehaviors`
+replaces actions. The section lifetime is independent of cell reuse.
 
 These are local UI demonstrations. Network requests, real media playback, keyboard
 handling, navigation destinations, and scroll-position policies belong to the app

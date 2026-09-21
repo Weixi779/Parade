@@ -55,7 +55,7 @@ struct CollectionCompositionTests {
 
     @MainActor
     private func invalidInput(_ input: InvalidInput) -> (
-        [SectionContent], CollectionUpdateError, [CollectionDiagnostic.Location]
+        [CapturedSection], CollectionUpdateError, [CollectionDiagnostic.Location]
     ) {
         switch input {
         case .duplicateSection:
@@ -126,8 +126,8 @@ struct CollectionCompositionTests {
         _ id: String,
         cells: [Int] = [],
         views: [AnySupplementaryPresenter] = []
-    ) -> SectionContent {
-        SectionContent(
+    ) -> CapturedSection {
+        CapturedSection(
             id: AnyHashable(id),
             cells: cells.map { AnyCellPresenter(IndexedCell(id: $0)) },
             supplementaryViews: views

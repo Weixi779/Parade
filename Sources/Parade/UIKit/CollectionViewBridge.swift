@@ -4,11 +4,11 @@ import UIKit
 
 /// Owns fixed view creation, bindings and UIKit delegate handling.
 ///
-/// Only scroll and flow-layout callbacks are forwarded. Selection, highlighting,
+/// Only scroll callbacks are forwarded. Selection, highlighting,
 /// display lifecycle, and context menus belong to the submitted presenters.
 @MainActor
 final class CollectionViewBridge: NSObject,
-    UICollectionViewDelegateFlowLayout
+    UICollectionViewDelegate
 {
     weak var owner: CollectionOrchestrator?
 
@@ -303,82 +303,6 @@ extension CollectionViewBridge {
 
     func scrollViewDidChangeAdjustedContentInset(_ scrollView: UIScrollView) {
         owner?.scrollViewDelegate?.scrollViewDidChangeAdjustedContentInset?(scrollView)
-    }
-}
-
-// MARK: - UICollectionViewDelegateFlowLayout Forwarding
-
-extension CollectionViewBridge {
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        sizeForItemAt indexPath: IndexPath
-    ) -> CGSize {
-        owner?.flowLayoutDelegate?.collectionView?(
-            collectionView,
-            layout: collectionViewLayout,
-            sizeForItemAt: indexPath
-        ) ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.itemSize ?? .zero
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        insetForSectionAt section: Int
-    ) -> UIEdgeInsets {
-        owner?.flowLayoutDelegate?.collectionView?(
-            collectionView,
-            layout: collectionViewLayout,
-            insetForSectionAt: section
-        ) ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.sectionInset ?? .zero
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        minimumLineSpacingForSectionAt section: Int
-    ) -> CGFloat {
-        owner?.flowLayoutDelegate?.collectionView?(
-            collectionView,
-            layout: collectionViewLayout,
-            minimumLineSpacingForSectionAt: section
-        ) ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.minimumLineSpacing ?? 0
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        minimumInteritemSpacingForSectionAt section: Int
-    ) -> CGFloat {
-        owner?.flowLayoutDelegate?.collectionView?(
-            collectionView,
-            layout: collectionViewLayout,
-            minimumInteritemSpacingForSectionAt: section
-        ) ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.minimumInteritemSpacing ?? 0
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        referenceSizeForHeaderInSection section: Int
-    ) -> CGSize {
-        owner?.flowLayoutDelegate?.collectionView?(
-            collectionView,
-            layout: collectionViewLayout,
-            referenceSizeForHeaderInSection: section
-        ) ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.headerReferenceSize ?? .zero
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        referenceSizeForFooterInSection section: Int
-    ) -> CGSize {
-        owner?.flowLayoutDelegate?.collectionView?(
-            collectionView,
-            layout: collectionViewLayout,
-            referenceSizeForFooterInSection: section
-        ) ?? (collectionViewLayout as? UICollectionViewFlowLayout)?.footerReferenceSize ?? .zero
     }
 }
 

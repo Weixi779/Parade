@@ -6,7 +6,7 @@ import Testing
 @testable import Parade
 
 struct CollectionBatchTests {
-    private typealias Section = SectionContent
+    private typealias Section = CapturedSection
     private typealias Batch = CollectionBatch
 
     @Test("Unchanged structure emits no batches, including retained empty sections")
@@ -541,7 +541,7 @@ private struct FixedDiff: SectionedDiffAlgorithm {
     }
 }
 
-private extension SectionContent {
+private extension CapturedSection {
     init(id: AnyHashable, items: [AnyHashable]) {
         self.init(id: id, cells: items.map { AnyCellPresenter(BatchCell(id: $0)) })
     }
@@ -559,6 +559,6 @@ private struct BatchCell: CellPresenter {
 
 /// Independent identity projection for the replay oracle, with no production
 /// planning or validation helpers involved in computing its expected result.
-private func identities(_ sections: [SectionContent]) -> [[AnyHashable]] {
+private func identities(_ sections: [CapturedSection]) -> [[AnyHashable]] {
     sections.map { [$0.id] + $0.cellIds }
 }

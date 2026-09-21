@@ -7,8 +7,9 @@ presenters, a replaceable data source, and a UIKit update orchestrator. The defa
 implementation uses Parade's sectioned diff and staged updates. An adapter for
 Apple's `UICollectionViewDiffableDataSource` is also included.
 
-Version 0.1.0 is the first public release. During 0.x development, minor versions
-may change public API; see the [changelog](CHANGELOG.md) before upgrading.
+This checkout contains the next breaking API. It supports
+`UICollectionViewCompositionalLayout` exclusively. The published 0.1.0 API differs;
+see the [changelog](CHANGELOG.md) and migration notes before upgrading.
 
 ## Requirements
 
@@ -47,15 +48,16 @@ For a Swift package, add the dependency and product to your `Package.swift`:
 .product(name: "Parade", package: "Parade")
 ```
 
-For local development, add this checkout as a local package instead.
+The installation instructions above select the published 0.1 release line. To use
+the new API documented below, add this checkout as a local package until the next
+release is published.
 
 ## Quick start
 
-The application supplies the `UICollectionView` and layout and retains a
-`CollectionOrchestrator`. It submits current `[any SectionPresenter]` compositions;
-each section can hold any combination of `AnyCellPresenter` and
-`AnySupplementaryPresenter`. Concrete presenters keep their typed model and view
-relationship until that composition boundary.
+The application supplies a collection view and retains its `CollectionOrchestrator`.
+The orchestrator installs a compositional layout. Each reference-type `SectionPresenter`
+owns one module's business state and captures a `SectionPresentation` containing
+cells, supplementary views and native section layout construction.
 
 ```swift
 import UIKit
@@ -72,21 +74,50 @@ struct MessagePresenter: CellPresenter {
     }
 }
 
-struct ConversationPresenter: SectionPresenter {
-    let id: UUID
-    let messages: [MessagePresenter]
-    var cells: [AnyCellPresenter] { messages.map(AnyCellPresenter.init) }
+@MainActor
+final class ConversationSection: SectionPresenter {
+    let id = UUID()
+    let updates = SectionUpdateContext()
+    var messages: [MessagePresenter] = []
+
+    func capturePresentation() -> DefaultSectionPresentation {
+        DefaultSectionPresentation(cells: messages.map(AnyCellPresenter.init)) { environment in
+            let configuration = UICollectionLayoutListConfiguration(appearance: .plain)
+            return NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
+        }
+    }
+
+    func receive(_ message: MessagePresenter) async throws {
+        messages.append(message)
+        try await update()
+    }
 }
 
-// Retain this as a property of your view controller.
+let collectionView = UICollectionView(
+    frame: .zero, collectionViewLayout: UICollectionViewLayout()
+)
 let orchestrator = CollectionOrchestrator(collectionView: collectionView)
-try await orchestrator.apply([conversationPresenter], animated: true)
+let conversation = ConversationSection()
+try await orchestrator.setSections([conversation], animated: false)
+try await conversation.receive(MessagePresenter(id: UUID(), text: "Hello"))
 ```
 
-Section IDs are unique in the collection. Cell IDs identify globally unique display
-occurrences; an app shown in two App Store sections needs two occurrence IDs.
-Presenters should remain immutable after submission. Business state, actions,
-requests, navigation, and scrolling policy remain in the application.
+`SectionPresentation` is a protocol; `DefaultSectionPresentation` is optional
+convenience storage. A custom immutable output can hold layout inputs such as a
+column count and implement `makeLayout(in:)` directly. Capture those inputs with
+the cells; never have a captured layout closure reread mutable section state.
+The environment remains current when UIKit constructs the layout.
+
+`setSections` changes membership and order while preserving surviving instances'
+last accepted content. `section.update()` submits one module's new presentation;
+`orchestrator.update([first, second])` submits several atomically, including cell
+transfers. Await initial attachment before using the module's update context.
+Section IDs are stable and unique; cell IDs are globally unique display occurrences.
+Removed or replaced module instances cannot apply queued updates to their successors.
+
+Business requests, listener cancellation, navigation and events belong to the module
+or application. Attached sections are retained regardless of visibility; UIKit still
+reuses cells normally. Pagination and eviction of business modules are application decisions.
 
 `CellPresenter` and `SupplementaryPresenter` inherit `DiffableElement: Equatable`.
 Identity matches occurrences; standard `==` decides whether matched values need
@@ -97,12 +128,11 @@ synthesized or custom equality is fine, since diff content comparisons already
 match IDs first.
 
 Identity, equality, cell erasure, and captured diff data have no MainActor
-requirement. Presenter protocols isolate UI configuration, behaviors, interaction
-policies, and callbacks at the member level, without isolating the conforming type.
+requirement. Cell and supplementary presenter protocols isolate UI configuration, behaviors,
+interaction policies, and callbacks at the member level. Section owners are MainActor-isolated.
 Ordinary value presenters therefore need no `nonisolated` equality workaround.
 
-Reading a section's cells/supplementaries stays on MainActor because these getters
-may read application UI state. Reading supplementary `elementKind` and its erasure
+Capturing a section presentation stays on MainActor because it reads business state. Reading supplementary `elementKind` and its erasure
 initializer also stay there: UIKit's standard header/footer constants require it.
 Captured supplementary IDs, kinds, and item indices are ordinary values afterward.
 
@@ -157,6 +187,7 @@ presenter callbacks do nothing, and context menus are absent. Collection-wide
 selection event handling remains available. Policies are read when queried, rather
 than captured during erasure; keep policy getters cheap and free of side effects.
 
+An unbounded AsyncStream carries complete operations to one sequential consumer.
 Updates execute in FIFO order. Callback and async completion include every
 structural stage, content update, and behavior refresh. A cancelled awaiting task
 does not roll back an accepted update. Read-only queries describe the data source
@@ -180,7 +211,7 @@ concrete view type. Nib/XIB construction is unsupported.
 
 Supported integration includes header/footer/custom
 supplementary views, selection/highlighting, context menus, display callbacks,
-scroll and FlowLayout delegate forwarding, empty content, and explicit `.reload`.
+scroll delegate forwarding and captured compositional layouts, empty content, and explicit `.reload`.
 Empty sections are retained. The package has no third-party dependencies.
 
 See [architecture and update semantics](Docs/Architecture.md),
@@ -207,7 +238,8 @@ let orchestrator = CollectionOrchestrator(collectionView: collectionView) {
 The closure runs once and returns a concrete instance conforming to
 `CollectionDataSource`. The orchestrator retains it. Each instance belongs to one
 collection view. It can be its own `UICollectionViewDataSource`, as the default is,
-or hold one, as the Apple adapter does. The orchestrator installs its `dataSource`
+or hold one, as the Apple adapter does. The source also supplies `layoutSection(at:environment:)` from its current captured
+section version. The orchestrator installs its `dataSource`
 property into UIKit; no internal switch selects the implementation. Start it empty
 and submit updates only through the orchestrator.
 
@@ -215,12 +247,14 @@ A custom implementation supplies three things:
 
 - The stable native `UICollectionViewDataSource`, using the supplied cell and
   supplementary providers for dequeue, configuration, and binding.
-- Current section/item counts, identity-position queries, presenter lookup, and
-  empty-content status. These must agree with UIKit during intermediate updates.
+- Current section/item counts, identity-position queries, presenter lookup, captured
+  section layout construction, and empty-content status. These must agree with UIKit
+  during intermediate updates.
 - `apply(from:to:animated:mode:)`, which receives validated `CollectionComposition`
-  values containing captured sections, items, supplementary presenters, and lookup
-  tables. It returns after its UIKit update reaches the target, optionally returning
-  recovery diagnostics. It must reload a valid target if its diff cannot be applied.
+  values containing captured sections, items, supplementary presenters, layouts and
+  lookup tables. It owns stage installation and layout invalidation, and returns after
+  UIKit reaches the target, optionally returning recovery diagnostics. It must reload
+  a valid target if its diff cannot be applied.
 
 Parade keeps submission capture/validation, FIFO ordering, registration preparation,
 delegate handling, actual-view lifecycle bindings, final behavior refresh, diagnostics,

@@ -1,8 +1,15 @@
 # Architecture
 
-Parade expresses a collection as a current composition of typed presenters. The
-application owns its state and creates the collection view and system layout.
-Parade owns the last applied composition and the mechanics of presenting the next one.
+Parade presents stable business sections through captured display versions. The
+application creates the collection view. `CollectionOrchestrator` installs and owns
+its `UICollectionViewCompositionalLayout`, data source and delegate. This breaking
+version has one layout contract and no Flow-layout compatibility path.
+
+A `SectionPresenter` is a MainActor reference type. It owns module state and a
+`SectionUpdateContext`, and captures a `SectionPresentation`. The output protocol
+requires cells, supplementary views and `makeLayout(in:) -> NSCollectionLayoutSection`.
+`DefaultSectionPresentation` is a convenience implementation. `CapturedSection` erases
+concrete output types while keeping content and layout from the same capture.
 
 Construction chooses the update implementation explicitly:
 
@@ -21,11 +28,12 @@ application implementation. There is no backend-type branch in the orchestrator.
 
 | Role | Owns | Does not own |
 | --- | --- | --- |
-| SectionPresenter | Section identity and its current cells/supplementaries | Old section versions, requests, update queue |
+| SectionPresenter | Stable module identity, business state, requests/listeners, update context, capture of display output | Collection indexing, other modules, UIKit execution |
+| SectionPresentation | Immutable cell/supplementary output and inputs for native section layout construction | Live business mutations, collection membership |
 | CellPresenter | One occurrence's identity, content comparison, concrete cell configuration and behaviors | Collection indexing or other sections |
 | SupplementaryPresenter | Reusable-view identity, kind/item address, configuration and behaviors | Layout creation or cell lifetime |
-| CollectionOrchestrator | Validated submissions, last completed baseline, FIFO queue, registry, delegate bridge, final completion | Current data-source positions, diff execution or UIKit batches |
-| CollectionDataSource | Current section/item queries, native data source, applying a captured target through UIKit | Business state, submission queue, delegate or view-creation policy |
+| CollectionOrchestrator | Module attachment, operation queue, last completed baseline, compositional layout provider, registry, delegate bridge, completion | Current data-source positions, diff execution or UIKit batches |
+| CollectionDataSource | Current section/item/layout queries, native data source, applying a captured target through UIKit | Business state, submission queue, delegate or view-creation policy |
 | DefaultCollectionDataSource | Current stage data and indexes, sectioned diff/planning, UIKit batches and reload recovery | Public completion or business events |
 | DiffableCollectionDataSource | Native snapshots and positions, logical/native identity mapping, current and previous presenter lookup during apply | Parade's structural planner or its algorithm slot |
 
@@ -50,11 +58,13 @@ of that value, not another service or state owner.
 
 ## Presenter composition
 
-Sections are protocol implementations, not subclasses of a framework controller.
+Sections are classes conforming to a protocol; no framework base class is required.
 An App Store section can transform one business model into two, four, or any number
 of cells. A chat section can hold heterogeneous text, image, and notice presenters.
-The same two layers support both cases. Applications submit section presenters;
-data-source implementations receive a captured `CollectionComposition`.
+The same two layers support both cases. Applications establish membership with `setSections`. Sections capture and submit
+local changes with `update()`. `orchestrator.update([first, second])` captures several
+sections atomically. Data-source implementations receive a full captured
+`CollectionComposition` built against the latest completed baseline.
 
 `AnyCellPresenter` and `AnySupplementaryPresenter` erase at the heterogeneous array
 boundary. They retain an internal `underlyingPresenter`, along with captured
@@ -108,13 +118,13 @@ must implement their configuration method and may return `nil` for a given reque
 
 ## Isolation boundary
 
-Presenter and capability protocols place MainActor on specific UI requirements:
+Cell/supplementary presenter and capability protocols place MainActor on specific UI requirements:
 configuration, behavior binding, interaction-policy reads, and event callbacks.
-Their conforming types are not implicitly isolated as a whole. Application code
-can still choose MainActor for a section that owns mutable UI state.
+Their conforming types are not implicitly isolated as a whole. The `SectionPresenter`
+contract itself is MainActor-isolated because it owns mutable state.
 
-`SectionPresenter.cells` and `supplementaryViews` are read on MainActor, and
-`SectionContent.init(_:)` captures them there. Supplementary `elementKind` is also
+`SectionPresenter.capturePresentation()` is read on MainActor, and
+`CapturedSection.init(capturing:)` captures content and binds the native layout method there. Supplementary `elementKind` is also
 read there because UIKit's header/footer constants are isolated in the SDK;
 `AnySupplementaryPresenter.init(_:)` captures that value once. Identity itself,
 cell erasure, captured section reconstruction, validation, and the complete differ
@@ -159,19 +169,19 @@ sequenceDiagram
     participant App
     participant Orchestrator
     participant Source as Selected DataSource
-    App->>Orchestrator: apply section presenters
-    Note over Orchestrator: Capture, validate, enqueue, prepare registrations
+    App->>Orchestrator: setSections / section.update / update multiple sections
+    Note over Orchestrator: Capture inputs, validate locally, enqueue
+    Note over Orchestrator: Resolve against latest baseline, validate globally, prepare registrations
     Orchestrator->>Source: await apply(last completed, target)
     Note over Source: Own current data and UIKit update until settled
     Source-->>Orchestrator: Finished, optional recovery diagnostics
-    Note over Orchestrator: Refresh behaviors/layout, commit baseline and revision
+    Note over Orchestrator: Refresh bindings/layout, commit baseline and membership, publish revision
     Orchestrator-->>App: Completion
 ```
 
-`CollectionComposition` and `SectionContent` expose the existing captured input to
+`CollectionComposition` and `CapturedSection` expose the existing captured input to
 external implementations. Callers still submit section presenters; they do not need
-to build a public snapshot. The composition is complete, including identity, content,
-and supplementary information. UIKit callbacks and public position queries read the
+to build a public snapshot. The composition is complete, including identity, content, supplementary information and captured layout construction. UIKit callbacks and public position queries read the
 selected data source, never the orchestrator's last completed baseline.
 
 For a cell request, the path is deliberately small:
@@ -187,7 +197,8 @@ flowchart LR
 The bridge also handles UIKit delegate callbacks. It retains bindings on actual
 views so an old disappearing view keeps the right presenter for its end-display
 callback. Events reach the presenter's application callback; business state changes
-produce a new submission. No context object is passed into business presenters.
+produce a new submission. Cell and supplementary presenters receive no collection
+context; section modules own their explicit `SectionUpdateContext`.
 
 ## Default implementation's planning boundary
 
@@ -223,8 +234,10 @@ classDiagram
 `CollectionComposition` validates identities and supplementary addresses in its
 constructor while building immutable presenter lookups. Validation finishes each
 section before proceeding to the next, preserving the first reported error and both
-conflict positions. Only successful compositions enter the queue or become a reload
-target. There is no separate input-index object or generic dictionary builder.
+conflict positions. Submissions validate locally known inputs before entering the queue;
+complete targets are validated against the execution-time baseline. Only successful
+compositions reach the data source, including reload targets. There is no separate
+input-index object or generic dictionary builder.
 
 `CollectionPositions` is an internal calculation helper shared by the algorithm and
 plan validation. It maps identities to positions and rejects duplicate section/item
@@ -235,7 +248,7 @@ and error precedence belong to the captured composition.
 `SectionedDiffAlgorithm` is the public computation boundary. It receives two arrays
 of `DiffableSection`, including their items. Sections supply identity and comparison
 of their own content; items use the existing `DiffableElement` identity and equality.
-`SectionContent` adapts the captured presenters without changing presenter protocols.
+`CapturedSection` adapts the captured presenters without changing presenter protocols.
 Its own-content comparison covers supplementary identity, address and content, excluding cells.
 
 `SectionedChanges` contains section/item inserts, deletes, moves and updates in the
@@ -251,7 +264,7 @@ The algorithm runs synchronously; the input's comparison rules still define cont
 
 `CollectionUpdatePlan` invokes the supplied algorithm and validates its result before
 using any coordinates. It constructs up to three structural batches with complete
-`SectionContent` values. Each retained section keeps its source supplementary metadata,
+`CapturedSection` values. Each retained section keeps its source supplementary metadata and captured layout,
 and each retained cell keeps its source presenter, even when moved into a new section.
 Inserted identities use target content. Final content edits use target coordinates.
 
@@ -296,9 +309,12 @@ stateDiagram-v2
     Completed --> Idle: queue empty
 ```
 
-Accepted submissions are FIFO. `apply` captures section composition before returning,
-so a later change to the caller's array or section properties cannot change UIKit's
-counts. Presenter values themselves must remain immutable after submission; the
+Accepted submissions are FIFO. `setSections` captures every supplied module at submission
+for possible attachment; execution decides which captures are needed. `update` captures
+the selected modules' presentation outputs. Existing modules
+in a membership/reorder operation retain their latest completed content. Later live
+state changes cannot change a captured version's arrays or UIKit counts. Presenter
+values and layout business inputs must remain immutable after submission; the
 framework cannot deep-copy arbitrary reference models captured inside user code.
 
 The update plan contains up to three nonempty structural batches: add destination sections,
@@ -333,13 +349,14 @@ UIKit may display a previously prepared cell again without a new dequeue; see
 [Apple's cell lifecycle discussion](https://developer.apple.com/videos/play/wwdc2021/10252/).
 
 `sectionId(at:)`, `cellPresenter(at:)`, and identity/position queries use UIKit's current
-stage. Compositional layout should resolve section identity through those queries,
-not assume that its numeric index already refers to the application's latest array.
-Use `supplementaryPresenter(ofKind:at:)` to decide whether that stage provides a
-header/footer/custom view when supplementary topology changes with application state.
+stage. The installed compositional provider asks the selected data source for
+`layoutSection(at:environment:)`, which maps that stage's section index to its captured
+layout. The page does not route layouts through its own latest module array.
+`supplementaryPresenter(ofKind:at:)` likewise queries the stage's current presenter.
 `appliedRevision` increments and `onDidApply` fires only after the entire submission.
-Enqueuing from callbacks is supported. Cancelling a task awaiting `apply` leaves the
-accepted update in the queue and does not cancel or roll back a UIKit transaction.
+Enqueuing from callbacks is supported. Cancelling a task awaiting `setSections` or
+`update` leaves the accepted operation in the queue and does not cancel or roll back
+a UIKit transaction.
 
 ## Error recovery
 
@@ -354,7 +371,13 @@ check identities, coordinates, conflicts, intermediate counts and final structur
 Each batch already contains its intermediate presenter composition. A failed plan
 reloads the independently validated target before any batch has started.
 Only after execution completes does the queue update its baseline, advance the
-revision, emit `onDidApply`, and complete successfully. Invalid input is rejected before entering the queue, without committing a target.
+revision, emit `onDidApply`, and complete successfully. `setSections` validates member
+IDs and distinct update contexts at submission. Content validation waits until execution
+resolves membership and selects accepted versions or attachment captures; an unused
+capture cannot reject a reorder even while initial attachment is pending. Content errors
+therefore settle in FIFO order. Local `update` operations always use their captures, so
+they validate those outputs before enqueueing. Every complete target is validated before
+UIKit changes. Neither validation failure commits a target.
 
 `CollectionDiagnostic` carries a reason, recovery action and, for invalid input,
 the relevant positions. `onDiagnostic` and the diagnostic logger run after active
@@ -393,8 +416,9 @@ is made for the complete update pipeline.
 ## Initial limits
 
 - iOS 16 minimum, Swift tools/language mode 6.0; the installed toolchain is newer.
-- Collection views and layouts are application-owned. Select a data source in the
-  factory; do not replace it or the delegate during use. Set the explicit forwarding delegates.
+- Collection views are application-owned; the orchestrator installs the compositional layout. Select a data source in the
+  factory; do not replace it or the delegate during use. Use `scrollViewDelegate` for
+  scroll forwarding.
 - No network/request ownership, layout DSL, height cache, navigation, prefetch API,
   drag/drop, interactive reordering, or automatic IM scroll anchoring is provided.
 - Pending updates are not coalesced; every accepted update has its own completion.
@@ -402,3 +426,58 @@ is made for the complete update pipeline.
   is not supported.
 - Tests establish structural and UIKit functional correctness for their covered
   scenarios. They do not establish device performance or animated visual quality.
+
+## Section operations and attachment
+
+Each section owns one stable update context. The collection retains attached module
+instances; the context weakly references its attachment and never retains the collection.
+Initial attachment completes before `update()` is available. Removed modules are
+disconnected. Replacing an instance, even with the same business ID, invalidates its
+queued updates. A context is reserved before UIKit starts, preventing simultaneous
+attachment to two collections during suspension.
+
+| Operation | Inputs captured on submission | Effect on the execution-time baseline |
+| --- | --- | --- |
+| `setSections` | Member identities/order and output for any instance that needs attachment at execution | Preserve surviving instances' accepted content; add/remove/reorder members |
+| `section.update()` | One module's display output and attachment identity | Replace that module's content and layout |
+| `orchestrator.update(_:)` | Several modules' outputs and attachment identities | Replace them together, supporting cross-section cell transfers |
+
+Membership changes preserve accepted versions of sections still attached at execution.
+Each supplied instance is also captured at submission: if an earlier queued operation
+removes it, reattachment uses that capture. An unused capture cannot reject or overwrite
+a surviving instance's accepted content. Each operation builds and globally validates a
+complete target when it reaches the head of the queue. A failed operation settles its
+receipt, preserves the baseline and allows subsequent operations to execute.
+
+An unbounded `AsyncStream` carries complete submissions. One MainActor consumer awaits
+execution of each submission before reading the next. MainActor alone would not provide
+this guarantee across suspension. Cancellation of a caller does not retract an accepted
+operation. Stream enqueue failure is an explicit error; accepted operations are not coalesced.
+
+## Captured layout stages
+
+Layout construction is mandatory. The framework binds the output's typed method at
+capture time; it never discovers layout support through `as?` or an enum of layout families.
+`CapturedSection.replacingCells` preserves the captured layout identity when constructing
+structural stages. Retained sections use source layout/supplementary metadata during
+manual structural stages; inserted sections use their captured target metadata. The final
+content phase installs target content and layout together. Builders must produce a valid
+native layout for their section, including empty sections and intermediate item counts.
+
+The default data source installs each stage before UIKit reads it and invalidates the
+layout as part of the appropriate batch. A new captured layout version schedules layout
+work even when cells compare equal. Layout closures are not compared for equality.
+The native data source resolves section positions through its current native snapshot,
+uses target presentations with previous-version fallback for removed identities during
+apply, then invalidates and lays out the settled target before returning.
+
+Captured business inputs are stable; UIKit's layout environment remains current.
+A layout closure must not reread the live module for those business inputs. Custom data
+sources must expose the same content/layout stage and invalidate when installing a new
+layout version. A provider alone does not cause layout-only changes to take effect.
+
+Cell reuse and section lifetime remain separate. Parade does not recycle business
+section instances based on viewport visibility, cancel application requests automatically,
+or provide a global event bus. Modules/application owners manage requests and cancellation;
+explicit closures/delegates carry business events. Pagination and member removal bound
+retained business state.

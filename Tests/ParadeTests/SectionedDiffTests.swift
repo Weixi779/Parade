@@ -100,7 +100,7 @@ struct SectionedDiffTests {
     }
 
     @Test("Empty sections can update their own content")
-    func emptySectionContent() throws {
+    func emptyCapturedSection() throws {
         for algorithm in algorithms {
             let result = try algorithm.diff(
                 from: [ValueSection(id: "s", title: "old")],

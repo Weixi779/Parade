@@ -31,7 +31,7 @@ struct CollectionUpdatePlan {
         // Create new destinations before moving retained cells into them. Anchor
         // them before the next surviving section to avoid moves for plain inserts.
         if !changes.insertedSections.isEmpty {
-            var insertions = [[SectionContent]](repeating: [], count: current.count + 1)
+            var insertions = [[CapturedSection]](repeating: [], count: current.count + 1)
             var anchor = current.count
             for (index, section) in destinations.enumerated().reversed() {
                 if let origin = sourcePositions.sectionIndices[section.id] {

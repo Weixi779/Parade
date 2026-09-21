@@ -6,39 +6,6 @@ import UIKit
 
 @MainActor
 struct CollectionViewBridgeTests {
-    @Test("Flow layout retains its configured defaults when no handler supplies an override")
-    func flowLayoutDefaults() throws {
-        let layout = UICollectionViewFlowLayout()
-        layout.itemSize = CGSize(width: 123, height: 45)
-        layout.sectionInset = UIEdgeInsets(top: 1, left: 2, bottom: 3, right: 4)
-        layout.minimumLineSpacing = 17
-        layout.minimumInteritemSpacing = 19
-        layout.headerReferenceSize = CGSize(width: 210, height: 31)
-        layout.footerReferenceSize = CGSize(width: 220, height: 32)
-        let view = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        let owner = CollectionOrchestrator(collectionView: view)
-        let bridge = try #require(view.delegate as? CollectionViewBridge)
-
-        #expect(bridge.collectionView(
-            view,
-            layout: layout,
-            sizeForItemAt: .init(item: 0, section: 0)
-        ) == layout.itemSize)
-        #expect(bridge.collectionView(view, layout: layout, insetForSectionAt: 0) ==
-            layout.sectionInset)
-        #expect(bridge.collectionView(view, layout: layout, minimumLineSpacingForSectionAt: 0) ==
-            17)
-        #expect(
-            bridge.collectionView(view, layout: layout, minimumInteritemSpacingForSectionAt: 0) ==
-                19
-        )
-        #expect(bridge.collectionView(view, layout: layout, referenceSizeForHeaderInSection: 0) ==
-            layout.headerReferenceSize)
-        #expect(bridge.collectionView(view, layout: layout, referenceSizeForFooterInSection: 0) ==
-            layout.footerReferenceSize)
-        withExtendedLifetime(owner) {}
-    }
-
     @Test("Forwarding preserves return values and mutable scroll destinations")
     func delegateForwarding() throws {
         let layout = UICollectionViewFlowLayout()
@@ -48,7 +15,6 @@ struct CollectionViewBridgeTests {
         let bridge = try #require(view.delegate as? CollectionViewBridge)
         let delegate = ForwardingDelegate()
         owner.scrollViewDelegate = delegate
-        owner.flowLayoutDelegate = delegate
 
         bridge.scrollViewDidScroll(view)
         var destination = CGPoint.zero
@@ -62,14 +28,7 @@ struct CollectionViewBridgeTests {
         #expect(delegate.velocity == CGPoint(x: 2, y: 3))
         #expect(destination == CGPoint(x: 7, y: 11))
         #expect(!bridge.scrollViewShouldScrollToTop(view))
-        #expect(bridge.collectionView(
-            view,
-            layout: layout,
-            sizeForItemAt: .init(item: 0, section: 0)
-        ) == CGSize(width: 91, height: 37))
-        // An optional handler that is not implemented still uses the layout value.
-        #expect(bridge.collectionView(view, layout: layout, minimumLineSpacingForSectionAt: 0) ==
-            23)
+
     }
 
     @Test("A removed cell's final callback belongs to its actual presenter, not its old index path")
@@ -77,7 +36,7 @@ struct CollectionViewBridgeTests {
         let fixture = Fixture()
         defer { fixture.window.isHidden = true }
         let events = Events()
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("old", token: "old", events: events)])],
             animated: false
         )
@@ -87,7 +46,7 @@ struct CollectionViewBridgeTests {
 
         // This is the instant between installing new data-source counts and
         // UIKit delivering the disappearing old cell's end-display callback.
-        fixture.installDisplayVersion([SectionContent(
+        fixture.installDisplayVersion([CapturedSection(
             id: "section",
             cells: [self.cell("new", token: "new", events: events)]
         )])
@@ -107,7 +66,7 @@ struct CollectionViewBridgeTests {
         let events = Events()
         let globalEvents = GlobalEvents()
         fixture.owner.eventHandler = globalEvents
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
             animated: false
         )
@@ -117,7 +76,7 @@ struct CollectionViewBridgeTests {
         )) as? ActionCell)
         let configurations = events.configurationCount
 
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("same", token: "second", events: events)])],
             animated: false
         )
@@ -146,7 +105,7 @@ struct CollectionViewBridgeTests {
         defer { fixture.window.isHidden = true }
         let events = Events()
         let path = IndexPath(item: 0, section: 0)
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
             animated: false
         )
@@ -156,7 +115,7 @@ struct CollectionViewBridgeTests {
         #expect(events.started == ["first", "first"])
         let configurations = events.configurationCount
 
-        fixture.installDisplayVersion([SectionContent(
+        fixture.installDisplayVersion([CapturedSection(
             id: "section",
             cells: [cell("same", token: "latest", events: events)]
         )])
@@ -184,14 +143,14 @@ struct CollectionViewBridgeTests {
         let path = IndexPath(item: 0, section: 0)
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
 
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
             animated: false
         )
         let original = try #require(fixture.view.cellForItem(at: path))
         bridge.collectionView(fixture.view, didSelectItemAt: path)
 
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [AnyCellPresenter(StaticPresenter(id: "same"))])],
             animated: false
         )
@@ -203,7 +162,7 @@ struct CollectionViewBridgeTests {
         #expect(events.selected == ["first"])
         #expect(globalEvents.selectedIds == [AnyHashable("same"), AnyHashable("same")])
 
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("same", token: "latest", events: events)])],
             animated: false
         )
@@ -226,12 +185,12 @@ struct CollectionViewBridgeTests {
             token: "first",
             content: "First"
         ))
-        var section = Section(
+        let section = Section(
             id: "section",
             cells: [cell("cell", token: "cell", events: events)],
             supplementaryViews: [first]
         )
-        try await fixture.owner.apply([section], animated: false)
+        try await fixture.owner.setSections([section], animated: false)
         let original = try #require(fixture.view.supplementaryView(
             forElementKind: kind,
             at: path
@@ -242,7 +201,7 @@ struct CollectionViewBridgeTests {
         #expect(first.registrationKey == replacement.registrationKey)
         #expect(first != replacement)
         section.supplementaryViews = [replacement]
-        try await fixture.owner.apply([section], animated: false)
+        try await fixture.owner.update([section], animated: false)
         let retained = try #require(fixture.view.supplementaryView(
             forElementKind: kind,
             at: path
@@ -257,7 +216,7 @@ struct CollectionViewBridgeTests {
             token: "latest",
             content: "Latest"
         ))]
-        try await fixture.owner.apply([section], animated: false)
+        try await fixture.owner.update([section], animated: false)
         let current = try #require(fixture.view.supplementaryView(
             forElementKind: kind,
             at: path
@@ -283,7 +242,7 @@ struct CollectionViewBridgeTests {
             allowed: false,
             events: events
         ))
-        try await fixture.owner.apply([Section(id: "section", cells: [first])], animated: false)
+        try await fixture.owner.setSections([Section(id: "section", cells: [first])], animated: false)
         let original = try #require(fixture.view.cellForItem(at: path))
         let initialConfigurations = events.configurations
         #expect(!bridge.collectionView(fixture.view, shouldSelectItemAt: path))
@@ -296,7 +255,7 @@ struct CollectionViewBridgeTests {
             events: events
         ))
         #expect(first == next)
-        try await fixture.owner.apply([Section(id: "section", cells: [next])], animated: false)
+        try await fixture.owner.setSections([Section(id: "section", cells: [next])], animated: false)
         #expect(fixture.view.cellForItem(at: path) === original)
         #expect(events.configurations == initialConfigurations)
         #expect(bridge.collectionView(fixture.view, shouldSelectItemAt: path))
@@ -334,7 +293,7 @@ struct CollectionViewBridgeTests {
         let fixture = Fixture()
         defer { fixture.window.isHidden = true }
         let events = Events()
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("same", token: "original", events: events)])],
             animated: false
         )
@@ -343,7 +302,7 @@ struct CollectionViewBridgeTests {
             section: 0
         )) as? ActionCell)
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
-        fixture.installDisplayVersion([SectionContent(
+        fixture.installDisplayVersion([CapturedSection(
             id: "section",
             cells: [AnyCellPresenter(ReplacementPresenter(id: "same", events: events))]
         )])
@@ -366,7 +325,7 @@ struct CollectionViewBridgeTests {
         defer { fixture.window.isHidden = true }
         let events = Events()
         let header = AnySupplementaryPresenter(Header(id: "old-header", events: events))
-        try await fixture.owner.apply([
+        try await fixture.owner.setSections([
             Section(
                 id: "section",
                 cells: [cell("cell", token: "cell", events: events)],
@@ -381,7 +340,7 @@ struct CollectionViewBridgeTests {
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
         #expect(events.started.contains("old-header"))
         let replacementEvents = Events()
-        fixture.installDisplayVersion([SectionContent(
+        fixture.installDisplayVersion([CapturedSection(
             id: "replacement",
             supplementaryViews: [AnySupplementaryPresenter(Header(
                 id: "old-header",
@@ -414,7 +373,7 @@ struct CollectionViewBridgeTests {
         let path = IndexPath(item: 0, section: 0)
         let kind = UICollectionView.elementKindSectionHeader
         let first = AnySupplementaryPresenter(Header(id: "header", events: events, token: "first"))
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [], supplementaryViews: [first])],
             animated: false
         )
@@ -437,7 +396,7 @@ struct CollectionViewBridgeTests {
             events: events,
             token: "latest"
         ))
-        fixture.installDisplayVersion([SectionContent(id: "section", supplementaryViews: [latest])])
+        fixture.installDisplayVersion([CapturedSection(id: "section", supplementaryViews: [latest])])
         bridge.refreshVisibleBehaviors()
         view.action?()
 
@@ -472,7 +431,7 @@ struct CollectionViewBridgeTests {
         defer { fixture.window.isHidden = true }
         let events = Events()
         let path = IndexPath(item: 0, section: 0)
-        try await fixture.owner.apply(
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
             animated: false
         )
@@ -490,11 +449,11 @@ struct CollectionViewBridgeTests {
             events: events,
             content: "changed",
             onConfigure: { cell in
-                fixture.installDisplayVersion([SectionContent(id: "section", cells: [nested])])
+                fixture.installDisplayVersion([CapturedSection(id: "section", cells: [nested])])
                 bridge.collectionView(fixture.view, willDisplay: cell, forItemAt: path)
             }
         ))
-        fixture.installDisplayVersion([SectionContent(id: "section", cells: [outer])])
+        fixture.installDisplayVersion([CapturedSection(id: "section", cells: [outer])])
         bridge.collectionView(fixture.view, willDisplay: view, forItemAt: path)
         bridge.collectionView(fixture.view, didEndDisplaying: view, forItemAt: path)
         bridge.collectionView(fixture.view, didEndDisplaying: view, forItemAt: path)
@@ -516,7 +475,7 @@ struct CollectionViewBridgeTests {
         let bridge = try #require(view.delegate as? CollectionViewBridge)
         let events = Events()
         let original = cell("prepared", token: "first", events: events, content: "original")
-        try await owner.apply([Section(id: "section", cells: [original])], animated: false)
+        try await owner.setSections([Section(id: "section", cells: [original])], animated: false)
         let path = IndexPath(item: 0, section: 0)
         let prepared = try #require(view.cellForItem(at: path) as? ActionCell)
         #expect(events.started == ["first"])
@@ -531,7 +490,7 @@ struct CollectionViewBridgeTests {
 
         let content = contentChanges ? "changed" : "original"
         let current = cell("prepared", token: "latest", events: events, content: content)
-        fixture.installDisplayVersion([SectionContent(id: "section", cells: [current])])
+        fixture.installDisplayVersion([CapturedSection(id: "section", cells: [current])])
         bridge.refreshVisibleBehaviors()
         // Drive redisplay independently of dequeue, which UIKit permits for an
         // already prepared view. The visible-only refresh above cannot reach it.
@@ -546,7 +505,7 @@ struct CollectionViewBridgeTests {
         #expect(events.ended == ["first", "latest"])
 
         let redisplayed = cell("prepared", token: "redisplayed", events: events, content: content)
-        fixture.installDisplayVersion([SectionContent(id: "section", cells: [redisplayed])])
+        fixture.installDisplayVersion([CapturedSection(id: "section", cells: [redisplayed])])
         bridge.refreshVisibleBehaviors()
         bridge.collectionView(view, willDisplay: prepared, forItemAt: path)
         prepared.action?()
@@ -574,7 +533,7 @@ struct CollectionViewBridgeTests {
             token: "first",
             content: "original"
         ))
-        try await owner.apply(
+        try await owner.setSections(
             [Section(id: "section", cells: [], supplementaryViews: [original])],
             animated: false
         )
@@ -599,7 +558,7 @@ struct CollectionViewBridgeTests {
             token: "latest",
             content: content
         ))
-        fixture.installDisplayVersion([SectionContent(
+        fixture.installDisplayVersion([CapturedSection(
             id: "section",
             supplementaryViews: [current]
         )])
@@ -630,7 +589,7 @@ struct CollectionViewBridgeTests {
             token: "redisplayed",
             content: content
         ))
-        fixture.installDisplayVersion([SectionContent(
+        fixture.installDisplayVersion([CapturedSection(
             id: "section",
             supplementaryViews: [redisplayed]
         )])
@@ -663,6 +622,10 @@ struct CollectionViewBridgeTests {
         let globalEvents = GlobalEvents()
         fixture.owner.eventHandler = globalEvents
         let source = MissingCellDataSource(bridge: bridge)
+        let ownedLayout = fixture.view.collectionViewLayout
+        fixture.view.setCollectionViewLayout(UICollectionViewCompositionalLayout { _, environment in
+            testSectionLayout(environment: environment)
+        }, animated: false)
         var insideLayout = false
         var diagnostics: [CollectionDiagnostic] = []
         await withCheckedContinuation { continuation in
@@ -688,7 +651,7 @@ struct CollectionViewBridgeTests {
 
         // Even when a presenter subsequently occupies the path, a fallback cell
         // must never forward its selection or display events to that presenter.
-        fixture.installDisplayVersion([SectionContent(
+        fixture.installDisplayVersion([CapturedSection(
             id: "section",
             cells: [cell("new", token: "new", events: events)]
         )])
@@ -700,7 +663,8 @@ struct CollectionViewBridgeTests {
             globalEvents.selectedIds.isEmpty)
 
         fixture.view.dataSource = fixture.defaultSource
-        try await fixture.owner.apply(
+        fixture.view.setCollectionViewLayout(ownedLayout, animated: false)
+        try await fixture.owner.setSections(
             [Section(id: "section", cells: [cell("new", token: "new", events: events)])],
             animated: false,
             mode: .reload
@@ -723,7 +687,8 @@ struct CollectionViewBridgeTests {
         var diagnostics: [CollectionDiagnostic] = []
         fixture.owner.onDiagnostic = { diagnostics.append($0) }
         let section = Section(id: "section", cells: [cell("one", token: "one", events: events)])
-        try await fixture.owner.apply([section], animated: false)
+        section.requestsHeader = true
+        try await fixture.owner.setSections([section], animated: false)
         let kind = UICollectionView.elementKindSectionHeader
         let path = IndexPath(item: 0, section: 0)
         let fallback = try #require(fixture.view.supplementaryView(forElementKind: kind, at: path))
@@ -737,12 +702,12 @@ struct CollectionViewBridgeTests {
             && $0.recovery == .displayedEmptyView
         })
 
-        var withHeader = section
+        let withHeader = section
         withHeader.supplementaryViews = [AnySupplementaryPresenter(Header(
             id: "header",
             events: events
         ))]
-        try await fixture.owner.apply([withHeader], animated: false)
+        try await fixture.owner.update([withHeader], animated: false)
         #expect(fixture.view.supplementaryView(forElementKind: kind, at: path) is ActionHeader)
         #expect(events.started.contains("header"))
     }
@@ -800,7 +765,7 @@ private final class Fixture {
         window.isHidden = false
     }
 
-    func installDisplayVersion(_ sections: [SectionContent]) {
+    func installDisplayVersion(_ sections: [CapturedSection]) {
         for section in sections {
             for presenter in section.cells {
                 owner.registry.prepare(presenter)
@@ -814,10 +779,28 @@ private final class Fixture {
 }
 
 @MainActor
-private struct Section: SectionPresenter {
+private final class Section: SectionPresenter {
+    var requestsHeader = false
+    let updates = SectionUpdateContext()
     let id: String
-    let cells: [AnyCellPresenter]
-    var supplementaryViews: [AnySupplementaryPresenter] = []
+    var cells: [AnyCellPresenter]
+    var supplementaryViews: [AnySupplementaryPresenter]
+
+    init(id: String, cells: [AnyCellPresenter], supplementaryViews: [AnySupplementaryPresenter] = []) {
+        self.id = id
+        self.cells = cells
+        self.supplementaryViews = supplementaryViews
+    }
+
+    func capturePresentation() -> DefaultSectionPresentation {
+        var kinds = supplementaryViews.map(\.elementKind)
+        if requestsHeader && !kinds.contains(UICollectionView.elementKindSectionHeader) {
+            kinds.append(UICollectionView.elementKindSectionHeader)
+        }
+        return DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { [kinds] in
+            testSectionLayout(kinds: kinds, environment: $0)
+        }
+    }
 }
 
 @MainActor

@@ -88,7 +88,10 @@ struct CollectionUpdatePlanTests {
 
         #expect(first == next)
         #expect(plan.batches.isEmpty)
-        #expect(plan.content.isEmpty)
+        #expect(plan.content.hasLayoutUpdates)
+        #expect(plan.content.reconfiguredCells.isEmpty)
+        #expect(plan.content.replacedCells.isEmpty)
+        #expect(plan.content.reloadedSections.isEmpty)
         #expect(plan.content.supplementaryUpdates.isEmpty)
         #expect(actions.isEmpty)
     }
@@ -126,7 +129,7 @@ struct CollectionUpdatePlanTests {
     }
 
     private func composition(
-        _ sections: [SectionContent]
+        _ sections: [CapturedSection]
     ) throws(CollectionComposition.ValidationFailure) -> CollectionComposition {
         try CollectionComposition(sections)
     }
@@ -135,8 +138,8 @@ struct CollectionUpdatePlanTests {
         _ id: String,
         _ cells: [AnyCellPresenter],
         header: AnySupplementaryPresenter? = nil
-    ) -> SectionContent {
-        SectionContent(
+    ) -> CapturedSection {
+        CapturedSection(
             id: AnyHashable(id),
             cells: cells,
             supplementaryViews: header.map { [$0] } ?? []
@@ -164,8 +167,8 @@ private actor PlanningContext {
     ) {
         let old = AnyCellPresenter(ValueCell(id: 1, title: "old"))
         let same = AnyCellPresenter(ValueCell(id: 1, title: "old"))
-        let source = try CollectionComposition([SectionContent(id: "section", cells: [old])])
-        let target = try CollectionComposition([SectionContent(id: "section", cells: [
+        let source = try CollectionComposition([CapturedSection(id: "section", cells: [old])])
+        let target = try CollectionComposition([CapturedSection(id: "section", cells: [
             AnyCellPresenter(ValueCell(id: 2, title: "inserted")),
             AnyCellPresenter(ValueCell(id: 1, title: "updated"))
         ])])

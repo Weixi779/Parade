@@ -64,6 +64,13 @@ public final class DiffableCollectionDataSource: CollectionDataSource {
         return native.index(for: token)
     }
 
+    public func layoutSection(
+        at index: Int, environment: any NSCollectionLayoutEnvironment
+    ) -> NSCollectionLayoutSection? {
+        guard let id = sectionId(at: index) else { return nil }
+        return (current.sectionsById[id] ?? previous.sectionsById[id])?.makeLayout(in: environment)
+    }
+
     public func cellPresenter(at indexPath: IndexPath) -> AnyCellPresenter? {
         guard indexPath.section >= 0, indexPath.section < numberOfSections,
               indexPath.item >= 0,
@@ -117,6 +124,8 @@ public final class DiffableCollectionDataSource: CollectionDataSource {
             content.applySupplementaries(in: collectionView)
         }
         previous = .empty
+        collectionView.collectionViewLayout.invalidateLayout()
+        collectionView.layoutIfNeeded()
         sectionIdentifiers.retain(Set(target.sectionsById.keys))
         itemIdentifiers.retain(Set(target.cellsById.keys))
         return []

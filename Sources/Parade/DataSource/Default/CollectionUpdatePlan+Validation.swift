@@ -7,8 +7,8 @@ extension CollectionUpdatePlan {
     /// Content equality remains the algorithm's responsibility.
     static func validate(
         _ changes: SectionedChanges,
-        from source: [SectionContent],
-        to target: [SectionContent],
+        from source: [CapturedSection],
+        to target: [CapturedSection],
         sourcePositions: CollectionPositions<AnyHashable, AnyHashable>,
         targetPositions: CollectionPositions<AnyHashable, AnyHashable>
     ) throws {
@@ -83,8 +83,8 @@ extension CollectionUpdatePlan {
     /// This catches valid-looking counts whose moves produce the wrong identities.
     static func validate(
         _ batches: [CollectionBatch],
-        from source: [SectionContent],
-        to target: [SectionContent]
+        from source: [CapturedSection],
+        to target: [CapturedSection]
     ) throws {
         _ = try CollectionPositions(source, input: .source)
         _ = try CollectionPositions(target, input: .target)
@@ -108,8 +108,8 @@ extension CollectionUpdatePlan {
 
 private extension CollectionBatch {
     func replaying(
-        from source: [SectionContent]
-    ) throws -> [SectionContent] {
+        from source: [CapturedSection]
+    ) throws -> [CapturedSection] {
         try require(!isEmpty, "Empty batch")
         if !deletedSections.isEmpty || !insertedSections.isEmpty || !movedSections.isEmpty {
             try require(
@@ -118,7 +118,7 @@ private extension CollectionBatch {
             )
             let count = source.count - deletedSections.count + insertedSections.count
             try require(count >= 0 && sections.count == count, "Invalid section count")
-            var slots = [SectionContent?](repeating: nil, count: count)
+            var slots = [CapturedSection?](repeating: nil, count: count)
             var removed = Set<Int>()
             for origin in deletedSections {
                 try require(
@@ -207,13 +207,13 @@ private extension CollectionBatch {
 
 }
 
-private func sameIdentities(_ lhs: [SectionContent], _ rhs: [SectionContent]) -> Bool {
+private func sameIdentities(_ lhs: [CapturedSection], _ rhs: [CapturedSection]) -> Bool {
     lhs.count == rhs.count && zip(lhs, rhs).allSatisfy {
         $0.id == $1.id && $0.cells.map(\.id) == $1.cells.map(\.id)
     }
 }
 
-private func contains(_ location: ItemLocation, in sections: [SectionContent]) -> Bool {
+private func contains(_ location: ItemLocation, in sections: [CapturedSection]) -> Bool {
     sections.indices.contains(location.section) &&
         sections[location.section].cells.indices.contains(location.item)
 }

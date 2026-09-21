@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — breaking changes
+
+- `CollectionOrchestrator` now installs and exclusively supports a compositional layout.
+  Flow-layout forwarding and application-owned layout routing are removed.
+- `SectionPresenter` is a MainActor reference-type contract with stable identity,
+  `SectionUpdateContext`, and `capturePresentation()`.
+- `SectionPresentation` requires native `NSCollectionLayoutSection` construction;
+  `DefaultSectionPresentation` supplies convenience storage. `CapturedSection`
+  replaces the former fixed `SectionContent` data-source input.
+- `setSections` changes members/order while preserving surviving instances' accepted
+  presentation. `section.update()` and `orchestrator.update(_:)` submit local or
+  atomic multi-section content/layout updates. The old whole-page `apply` entry is removed.
+- Complete operations run through one AsyncStream consumer. Targets use the latest
+  completed baseline, validate global IDs at execution and reject stale module instances.
+- Both built-in data sources expose stage-correct layout output and invalidate for
+  layout-only updates. Custom sources must implement `layoutSection(at:environment:)`.
+- IM and Store examples now retain section instances and submit module updates.
+
 ## 0.1.0
 
 First public release of Parade, a modular `UICollectionView` framework for Swift.
