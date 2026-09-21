@@ -1,6 +1,6 @@
 # Parade implementation contract
 
-This documents the next breaking implementation (2026-09-21), not the published 0.1 API.
+This documents the 0.2 implementation (2026-09-21), which changes the 0.1 public API.
 
 ## Ownership and public input
 
@@ -86,6 +86,9 @@ This documents the next breaking implementation (2026-09-21), not the published 
 - Attached modules are retained independently of cell visibility/reuse. Business cancellation,
   navigation, event routing, pagination, eviction and scroll anchoring remain application-owned.
   No generic layout family, second layout implementation or global event bus is included.
+- UIKit owns cell reuse and native cell prefetching. Parade leaves `isPrefetchingEnabled`
+  unchanged and does not install a `prefetchDataSource`; applications may supply one.
+  Section working-range callbacks are outside the 0.2 API.
 
 ## Verification
 

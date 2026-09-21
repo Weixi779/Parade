@@ -421,6 +421,9 @@ is made for the complete update pipeline.
   scroll forwarding.
 - No network/request ownership, layout DSL, height cache, navigation, prefetch API,
   drag/drop, interactive reordering, or automatic IM scroll anchoring is provided.
+- Native cell prefetching keeps the collection view's `isPrefetchingEnabled` value
+  (UIKit defaults to `true`). Applications may assign their own `prefetchDataSource`;
+  Parade provides no additional Section working-range callbacks.
 - Pending updates are not coalesced; every accepted update has its own completion.
 - Cells and supplementary views must support class construction. Nib/XIB loading
   is not supported.

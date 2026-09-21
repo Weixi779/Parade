@@ -7,9 +7,9 @@ presenters, a replaceable data source, and a UIKit update orchestrator. The defa
 implementation uses Parade's sectioned diff and staged updates. An adapter for
 Apple's `UICollectionViewDiffableDataSource` is also included.
 
-This checkout contains the next breaking API. It supports
-`UICollectionViewCompositionalLayout` exclusively. The published 0.1.0 API differs;
-see the [changelog](CHANGELOG.md) and migration notes before upgrading.
+Parade 0.2 supports `UICollectionViewCompositionalLayout` exclusively and introduces
+section-owned updates. It changes the 0.1 public API; see the
+[migration notes](CHANGELOG.md#migrating-from-01) before upgrading.
 
 ## Requirements
 
@@ -33,14 +33,14 @@ See [Announcing Swift 6](https://www.swift.org/blog/announcing-swift-6/).
 The package exposes one library and module, `Parade`, with no external dependencies.
 In Xcode, choose **File > Add Package Dependencies**, enter
 `https://github.com/Weixi779/Parade.git`, and select the `Parade` product.
-Use **Up to Next Minor Version** from `0.1.0` to stay on the 0.1 release line.
+Use **Up to Next Minor Version** from `0.2.0` to stay on the 0.2 release line.
 
 For a Swift package, add the dependency and product to your `Package.swift`:
 
 ```swift
 .package(
     url: "https://github.com/Weixi779/Parade.git",
-    .upToNextMinor(from: "0.1.0")
+    .upToNextMinor(from: "0.2.0")
 )
 ```
 
@@ -48,9 +48,8 @@ For a Swift package, add the dependency and product to your `Package.swift`:
 .product(name: "Parade", package: "Parade")
 ```
 
-The installation instructions above select the published 0.1 release line. To use
-the new API documented below, add this checkout as a local package until the next
-release is published.
+During 0.x development, minor versions may change public API. The dependency
+requirement above accepts 0.2 patch releases without automatically upgrading to 0.3.
 
 ## Quick start
 
@@ -118,6 +117,12 @@ Removed or replaced module instances cannot apply queued updates to their succes
 Business requests, listener cancellation, navigation and events belong to the module
 or application. Attached sections are retained regardless of visibility; UIKit still
 reuses cells normally. Pagination and eviction of business modules are application decisions.
+
+Parade leaves `isPrefetchingEnabled` unchanged; UIKit defaults it to `true` and
+prepares cells ahead of display. To receive data-prefetch callbacks for image loading
+or other business work, the application can assign a `UICollectionViewDataSourcePrefetching`
+object to `collectionView.prefetchDataSource`. Parade does not install one or provide
+Section working-range callbacks.
 
 `CellPresenter` and `SupplementaryPresenter` inherit `DiffableElement: Equatable`.
 Identity matches occurrences; standard `==` decides whether matched values need

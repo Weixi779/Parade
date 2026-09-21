@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased — breaking changes
+## 0.2.0
+
+Sections now own their state, captured compositional layout, and local updates.
+
+### Breaking changes
 
 - `CollectionOrchestrator` now installs and exclusively supports a compositional layout.
   Flow-layout forwarding and application-owned layout routing are removed.
@@ -17,6 +21,33 @@
 - Both built-in data sources expose stage-correct layout output and invalidate for
   layout-only updates. Custom sources must implement `layoutSection(at:environment:)`.
 - IM and Store examples now retain section instances and submit module updates.
+
+### Migrating from 0.1
+
+- Keep each section as a stable class instance with its own `SectionUpdateContext`.
+  Implement `capturePresentation()` using `DefaultSectionPresentation` or a custom
+  immutable `SectionPresentation` output.
+- Use `setSections` to attach, remove, or reorder sections. Await initial attachment,
+  then use `section.update()` for content/layout changes or `orchestrator.update(_:)`
+  to update several sections atomically. Reordering surviving instances preserves
+  their accepted content; it does not submit their uncommitted live state.
+- Move section layout construction into the captured presentation's `makeLayout(in:)`.
+  Capture layout inputs with the cells; do not read mutable section state from the
+  layout builder. Remove Flow-layout delegate forwarding and page-level layout routing.
+- For custom data sources, consume `CapturedSection` through `CollectionComposition`
+  and implement `layoutSection(at:environment:)` for the version currently used by UIKit.
+- Cell and supplementary presenter configuration, behavior, and display capabilities
+  retain their existing contracts. Attached sections remain alive independently of
+  cell visibility; UIKit continues to own view reuse and native cell prefetching.
+
+### Verification
+
+Local release checks passed 89 tests in 10 suites and all 10 public-API example
+smoke checks on Xcode 27 / iOS 27. The deployment target remains iOS 16; iOS 16
+runtime behavior and real-device performance are not established by these checks.
+
+See the [quick start](README.md#quick-start) and
+[verification coverage and limits](Docs/Verification.md).
 
 ## 0.1.0
 

@@ -1,8 +1,8 @@
 # Verification
 
-## Current breaking API — 2026-09-21
+## 0.2.0 release preparation — 2026-09-21
 
-Verified locally with Xcode 27.0, Swift 6 language mode, and an iPhone 18 Pro /
+Verified locally with Xcode 27.0 (27A266a), Swift 6 language mode, and an iPhone 18 Pro /
 iOS 27.0 simulator. The deployment target remains iOS 16.
 
 | Check | Result |
@@ -11,11 +11,12 @@ iOS 27.0 simulator. The deployment target remains iOS 16.
 | Section update and captured-layout integration | Passed with both supplied data sources |
 | Standalone IM and Store examples importing public API | Built successfully |
 | Example UIKit counts, cell types and shared installation action | All 10 smoke checks passed |
+| Local documentation links and heading anchors | All 14 resolved |
 
-The full test run took 6.571 seconds. Its result bundle is
-`/private/tmp/parade-initial-order-fixed.xcresult` (89 tests, zero failures). The example
-build and smoke checks preceded the latest membership-validation fix; the full test
-run includes it.
+The full test run took 14.651 seconds. Its result bundle is
+`/private/tmp/parade-0.2.0-release-20260921.xcresult` (89 tests, zero failures).
+The standalone examples were rebuilt and all smoke checks rerun against the same
+implementation, including the final membership-validation fixes.
 The example report is written to the simulator application's
 `Documents/smoke.json`. Xcode emitted an App Intents metadata extraction warning;
 the standalone example build emitted a linker sysroot warning.
@@ -27,11 +28,9 @@ ID conflicts followed by successful updates, atomic cell transfers, attachment
 reservation during suspended application, queued removal followed by reattachment
 of the same instance, and structural-stage layout identity.
 The previous Flow delegate forwarding test was removed with that unsupported API.
-The reattachment regression first failed on both supplied data sources, displaying
-item 1 at height 44 instead of the submitted item 2 at height 96. After fixing capture,
-it passes even when live state changes again to item 3 at height 144 before execution.
-The reorder regression also verifies that a surviving section's invalid unsubmitted
-content cannot reject the operation or replace its accepted presentation.
+Reattachment preserves the submitted content and layout even when live section state
+changes before execution. Reordering preserves a surviving section's accepted
+presentation even if its unsubmitted live content is invalid.
 Initial attachment is covered both while executing and while still queued: a later
 reorder ignores unused invalid live content and preserves accepted layout on both
 data sources. Content rejection is checked in FIFO order, with diagnostics and
