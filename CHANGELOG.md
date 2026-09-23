@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.3.0
+
+Optional section reconciliation preserves live module state across changing inputs.
+Attachment and display callbacks let modules manage work at the corresponding lifecycle.
+
+### API naming changes
+
+The public access levels and extension points remain unchanged. Update conformances
+and call sites using this mapping; the old names are not retained as aliases.
+
+| Previous name | New name |
+| --- | --- |
+| `SectionPresentation` | `SectionContent` |
+| `DefaultSectionPresentation` | `DefaultSectionContent` |
+| `SectionPresenter.Presentation` | `SectionPresenter.Content` |
+| `capturePresentation()` | `captureContent()` |
+| `CapturedSection` | `SectionSnapshot` |
+| `CollectionComposition` | `CollectionSnapshot` |
+
+Content describes a module's display output; snapshots hold identified display versions
+for queued updates and data sources. The new `SectionStore` owns live instances.
+
+### Additions
+
+- Add optional `SectionStore` and `SectionDefinition` for reconciling changing inputs
+  into stable section instances. Matching ID, input type, and presenter type preserve
+  local state; membership acceptance can await an external structural submission.
+- Add `SectionAttachmentObserving` for successful attachment and detachment.
+  Reorders and content updates preserve the attachment; rejected submissions emit no events.
+- Add `CollectionDisplayObserving`, driven by the application's `setVisible(_:)`,
+  and `SectionDisplayObserving`, which additionally requires a displayed cell or
+  supplementary view. Callbacks handle reentrant visibility changes, same-ID instance
+  replacement, delayed view callbacks, and updates without intermediate display flicker.
+- Cover reconciliation through the public API, including ownership, failure/retry,
+  suspended acceptance, and presentation integration with both supplied data sources.
+
+### Lifecycle integration
+
+Retain the store when using reconciliation, serialize its calls, and separately submit
+retained sections' content with `orchestrator.update(_:)`. Failed structural submission
+preserves store membership but does not roll back business input already received.
+
+Forward the containing component's visibility to `orchestrator.setVisible(_:)` when
+using section or collection display observation. Visibility defaults to false and
+does not detach sections. Remaining attachments are cleaned up in a subsequent
+MainActor task when the orchestrator is released; explicitly await `setSections([])`
+to finish detachment before transferring modules to another collection.
+
+### Verification
+
+Local release checks passed 126 tests in 12 suites and all 10 public-API example
+smoke checks on Xcode 27 / iOS 27. The minimum requirements remain iOS 16 and
+Swift tools 6.0. These simulator checks do not establish iOS 16 runtime behavior
+or real-device performance. See [verification coverage and limits](Docs/Verification.md).
+
 ## 0.2.0
 
 Sections now own their state, captured compositional layout, and local updates.

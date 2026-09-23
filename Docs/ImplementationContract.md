@@ -1,6 +1,7 @@
 # Parade implementation contract
 
-This documents the 0.2 implementation (2026-09-21), which changes the 0.1 public API.
+This documents the 0.3 implementation (2026-09-23), including the API naming
+changes from 0.2 and the compositional-only section model introduced in 0.2.
 
 ## Ownership and public input
 
@@ -8,14 +9,14 @@ This documents the 0.2 implementation (2026-09-21), which changes the 0.1 public
   `UICollectionViewCompositionalLayout`, data source and delegate. There is no Flow
   forwarding or alternate-layout mode.
 - `SectionPresenter` is a MainActor reference-type protocol: stable `id`, one stable
-  `SectionUpdateContext`, and `capturePresentation()` with an associated output type.
+  `SectionUpdateContext`, and `captureContent()` with an associated output type.
   A section may own business requests/listeners. Its instance maps to one UIKit section.
-- `SectionPresentation` is an output protocol requiring cells, supplementary views and
+- `SectionContent` is an output protocol requiring cells, supplementary views and
   `makeLayout(in:) -> NSCollectionLayoutSection`. The default supplementary list is empty.
-  `DefaultSectionPresentation` offers convenience storage without restricting custom outputs.
+  `DefaultSectionContent` offers convenience storage without restricting custom outputs.
 - Outputs and their cell/supplementary values must remain immutable after capture. Layout
   methods use captured business inputs and the current UIKit environment, never live module state.
-- `CapturedSection` erases concrete outputs for queued targets, completed baselines and
+- `SectionSnapshot` erases concrete outputs for queued targets, completed baselines and
   intermediate stages. It includes mandatory native layout construction and exposes
   `DiffableSection` to pure planning. Replacing stage cells preserves its metadata/layout.
 - Cell/supplementary identity, equality, registration, configuration, behavior replacement
@@ -24,6 +25,21 @@ This documents the 0.2 implementation (2026-09-21), which changes the 0.1 public
 
 ## Operations
 
+- Optional `SectionStore.reconcile(_:)` resolves definitions and immediately accepts
+  the resulting ordered instances. `reconcile(_:apply:)` first awaits its callback
+  for structural changes, then accepts membership; unchanged membership skips that
+  callback. Both return `Change` with target presenters, retained instances in target
+  order, removals in previous order, and an instance/order change flag.
+- Definition matching uses ID plus Input and Presenter types. New instances receive
+  only `make(input)`; survivors receive the current `update(presenter, input)` even
+  for repeated input. IDs must remain stable and match the definition. Duplicate IDs
+  reject the full list before any definition closure executes. Removed instances are
+  released by the store, and a returning identity is created again.
+- Reconcile calls must be serialized and cannot reenter the store from callbacks.
+  Callback failure preserves membership/order, not staged input or callback effects.
+  A returned change retains its presenters and is not a display snapshot. The store
+  retains no previous inputs or definition closures and never captures or submits
+  presentations. The caller separately submits retained content through existing APIs.
 - `setSections(_:animated:mode:completion:)` and its async overload change membership and
   order. Every supplied instance has a submission-time capture for possible attachment.
   At execution, surviving instances keep accepted content; absent instances use that capture,
@@ -46,6 +62,24 @@ This documents the 0.2 implementation (2026-09-21), which changes the 0.1 public
   One context belongs to one module instance. Removal/replacement disconnects old instances.
   Old queued operations cannot write into a replacement sharing the same business ID.
 
+## Attachment and display
+
+- `SectionAttachmentObserving` reports successful attachment and detachment after
+  the update context is connected or disconnected. Reordering, content updates and
+  rejected submissions do not create attachment transitions.
+- Applications report containing-component visibility through `setVisible(_:)`,
+  initially false. `CollectionDisplayObserving` follows it for every attached section,
+  including offscreen sections. Visibility changes take effect during pending updates.
+- `SectionDisplayObserving` additionally requires at least one displayed cell or
+  supplementary view. Prepared views do not count. Content-driven transitions settle
+  after all UIKit update stages, including same-ID replacement and cross-section moves.
+- Entry order is attachment, collection display, then section display; exit reverses
+  that order. Reentrant visibility changes are balanced after the current callback.
+  Old view bindings carry attachment identity without retaining the section instance.
+- Orchestrator destruction schedules remaining detachments on MainActor. Explicitly
+  awaiting `setSections([])` completes cleanup before transferring section ownership.
+  Display observation does not itself cancel business work or measure exposure/occlusion.
+
 ## Queue and completion
 
 - An unbounded AsyncStream holds complete submissions. One MainActor consumer awaits each
@@ -62,7 +96,7 @@ This documents the 0.2 implementation (2026-09-21), which changes the 0.1 public
 
 - Construction calls the `makeDataSource` factory once and retains its result. Custom sources
   implement `CollectionDataSource`, including `layoutSection(at:environment:)`.
-- Source `apply` receives validated complete source/target compositions and returns after
+- Source `apply` receives validated complete source/target snapshots and returns after
   all UIKit work and current queries describe target. It owns content/layout stage installation,
   invalidation and recovery. View creation uses supplied native registration providers.
 - The default source plans all structure before mutation. Manual structural batches retain
@@ -88,7 +122,7 @@ This documents the 0.2 implementation (2026-09-21), which changes the 0.1 public
   No generic layout family, second layout implementation or global event bus is included.
 - UIKit owns cell reuse and native cell prefetching. Parade leaves `isPrefetchingEnabled`
   unchanged and does not install a `prefetchDataSource`; applications may supply one.
-  Section working-range callbacks are outside the 0.2 API.
+  Section working-range callbacks are outside the 0.3 API.
 
 ## Verification
 

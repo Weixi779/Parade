@@ -7,9 +7,10 @@ presenters, a replaceable data source, and a UIKit update orchestrator. The defa
 implementation uses Parade's sectioned diff and staged updates. An adapter for
 Apple's `UICollectionViewDiffableDataSource` is also included.
 
-Parade 0.2 supports `UICollectionViewCompositionalLayout` exclusively and introduces
-section-owned updates. It changes the 0.1 public API; see the
-[migration notes](CHANGELOG.md#migrating-from-01) before upgrading.
+Parade 0.3 adds optional section reconciliation and attachment/display observation.
+It supports `UICollectionViewCompositionalLayout` exclusively, with section-owned
+updates. Public content and snapshot APIs have been renamed; see the
+[0.2 migration mapping](CHANGELOG.md#api-naming-changes) before upgrading.
 
 ## Requirements
 
@@ -33,14 +34,14 @@ See [Announcing Swift 6](https://www.swift.org/blog/announcing-swift-6/).
 The package exposes one library and module, `Parade`, with no external dependencies.
 In Xcode, choose **File > Add Package Dependencies**, enter
 `https://github.com/Weixi779/Parade.git`, and select the `Parade` product.
-Use **Up to Next Minor Version** from `0.2.0` to stay on the 0.2 release line.
+Use **Up to Next Minor Version** from `0.3.0` to stay on the 0.3 release line.
 
 For a Swift package, add the dependency and product to your `Package.swift`:
 
 ```swift
 .package(
     url: "https://github.com/Weixi779/Parade.git",
-    .upToNextMinor(from: "0.2.0")
+    .upToNextMinor(from: "0.3.0")
 )
 ```
 
@@ -49,13 +50,13 @@ For a Swift package, add the dependency and product to your `Package.swift`:
 ```
 
 During 0.x development, minor versions may change public API. The dependency
-requirement above accepts 0.2 patch releases without automatically upgrading to 0.3.
+requirement above accepts 0.3 patch releases without automatically upgrading to 0.4.
 
 ## Quick start
 
 The application supplies a collection view and retains its `CollectionOrchestrator`.
 The orchestrator installs a compositional layout. Each reference-type `SectionPresenter`
-owns one module's business state and captures a `SectionPresentation` containing
+owns one module's business state and captures a `SectionContent` containing
 cells, supplementary views and native section layout construction.
 
 ```swift
@@ -79,8 +80,8 @@ final class ConversationSection: SectionPresenter {
     let updates = SectionUpdateContext()
     var messages: [MessagePresenter] = []
 
-    func capturePresentation() -> DefaultSectionPresentation {
-        DefaultSectionPresentation(cells: messages.map(AnyCellPresenter.init)) { environment in
+    func captureContent() -> DefaultSectionContent {
+        DefaultSectionContent(cells: messages.map(AnyCellPresenter.init)) { environment in
             let configuration = UICollectionLayoutListConfiguration(appearance: .plain)
             return NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
         }
@@ -101,11 +102,24 @@ try await orchestrator.setSections([conversation], animated: false)
 try await conversation.receive(MessagePresenter(id: UUID(), text: "Hello"))
 ```
 
-`SectionPresentation` is a protocol; `DefaultSectionPresentation` is optional
+`SectionContent` is a protocol; `DefaultSectionContent` is optional
 convenience storage. A custom immutable output can hold layout inputs such as a
 column count and implement `makeLayout(in:)` directly. Capture those inputs with
 the cells; never have a captured layout closure reread mutable section state.
 The environment remains current when UIKit constructs the layout.
+
+The names distinguish instances, content, and display versions:
+
+| Type | Meaning |
+| --- | --- |
+| `SectionStore` | Maintains stable presenter instances across changing inputs. |
+| `SectionContent` | Describes the display content returned by `captureContent()`. |
+| `SectionSnapshot` | Combines one section's identity and captured content for an update. |
+| `CollectionSnapshot` | Holds one validated display version of the whole collection. |
+
+A store's live instances may already contain newer inputs while the collection still
+displays an older snapshot. Snapshots let old and target display versions coexist.
+They preserve captured content; they do not deep-copy arbitrary business objects.
 
 `setSections` changes membership and order while preserving surviving instances'
 last accepted content. `section.update()` submits one module's new presentation;
@@ -117,6 +131,41 @@ Removed or replaced module instances cannot apply queued updates to their succes
 Business requests, listener cancellation, navigation and events belong to the module
 or application. Attached sections are retained regardless of visibility; UIKit still
 reuses cells normally. Pagination and eviction of business modules are application decisions.
+
+Sections can opt into `SectionAttachmentObserving` for `didAttach()` and
+`didDetach()`. These run after successful membership updates, with the update
+context already connected or disconnected. Reordering and content updates do not
+repeat them; rejected submissions do not emit them. Use these callbacks to start
+and cancel work owned by an attachment.
+
+Display observation has two independent, opt-in levels:
+
+| Capability | Callbacks | Meaning |
+| --- | --- | --- |
+| `CollectionDisplayObserving` | `collectionWillDisplay()` / `collectionDidEndDisplaying()` | The whole collection is visible, including for attached sections whose content is offscreen. |
+| `SectionDisplayObserving` | `sectionWillDisplay()` / `sectionDidEndDisplaying()` | This attached section has at least one displayed cell or supplementary view in a visible collection. |
+
+The application supplies whole-collection visibility through
+`orchestrator.setVisible(_:)`, for example when a screen, child controller, or embedded
+component appears or disappears. It defaults to false. Parade derives section display
+from actual view display cycles; prepared views do not count, and supplementary-only
+sections are supported. Cell and supplementary callbacks remain independent.
+
+Callbacks report transitions only, with no initial end notification while hidden.
+On entry, `didAttach()` precedes collection display, which precedes section display.
+On exit, section display ends before collection display and `didDetach()`. Repeated
+visibility values emit nothing. Collection visibility propagates immediately, even
+during an update; section content changes settle after the full update so intermediate
+UIKit stages do not repeatedly end and restart section display.
+
+These callbacks do not measure exposure percentages, occlusion, or app activity.
+Sections decide whether display changes should pause animation or other work;
+visibility does not automatically cancel requests or end an attachment.
+
+When the orchestrator is released, remaining attachments are cleaned up in a
+subsequent MainActor task. To finish cleanup before transferring sections to another
+collection, explicitly await `setSections([])` first. Lifecycle callbacks should
+not retain the orchestrator.
 
 Parade leaves `isPrefetchingEnabled` unchanged; UIKit defaults it to `true` and
 prepares cells ahead of display. To receive data-prefetch callbacks for image loading
@@ -224,6 +273,59 @@ See [architecture and update semantics](Docs/Architecture.md),
 [IM and App Store examples](Examples/ParadeExamples.swift).
 The [verification report](Docs/Verification.md) records the tested paths and limits.
 
+## Composing sections from changing inputs
+
+Use an optional `SectionStore` when each page update describes a new ordered list
+of modules. Retain the store alongside the orchestrator. `SectionDefinition` pairs
+an ID and input with typed creation and update closures; the store keeps matching
+presenter instances alive so their local state survives page refreshes and reordering.
+Applications with fixed sections can continue holding their presenters directly.
+
+For example, a `FeedSection` initializer and `receive(_:)` method can accept the same
+business model while `captureContent()` builds its display version:
+
+```swift
+let sections = SectionStore() // Retain across page updates.
+
+let definitions = models.map { model in
+    SectionDefinition(
+        id: model.id,
+        input: model,
+        make: { FeedSection(model: $0) },
+        update: { $0.receive($1) } // Stage input without submitting a presentation.
+    )
+}
+let change = try await sections.reconcile(definitions) { change in
+    try await orchestrator.setSections(change.presenters)
+}
+if !change.retained.isEmpty {
+    try await orchestrator.update(change.retained)
+}
+```
+
+`reconcile(_:apply:)` invokes `apply` only when instances or their order change,
+and accepts that membership only after the callback succeeds. Retained sections
+receive the new input before the callback, but keep their accepted presentations
+until the caller submits content. A section with its own submission policy can be
+updated through that policy instead of the final batch above. Structure and content
+are separate submissions; this sequence is not one atomic display transaction.
+
+Reuse requires the same ID, Input type, and Presenter type. Changing either type
+replaces the instance. Duplicate IDs reject the whole input before any creation or
+update closure runs. Every surviving instance receives the current input and current
+update closure, even for repeated input. The store retains neither old inputs nor
+definition closures. `Change.retained` follows target order; `Change.removed` follows
+previous order and includes same-ID replacements. Keeping a change retains its
+presenters, including removed instances.
+
+Serialize calls to a store, including the full async reconciliation and any follow-up
+content submission. Do not reenter it from definition or apply callbacks. If `apply`
+throws, including cancellation, the store preserves its old membership and order;
+already-mutated business state and callback side effects are not rolled back.
+The synchronous `reconcile(_:)` accepts immediately and returns the same change
+description without a submission callback. Neither overload attaches sections,
+captures presentations, nor performs UIKit updates itself.
+
 ## Replacing the data source
 
 The default construction stays `CollectionOrchestrator(collectionView:)`. To choose
@@ -255,7 +357,7 @@ A custom implementation supplies three things:
 - Current section/item counts, identity-position queries, presenter lookup, captured
   section layout construction, and empty-content status. These must agree with UIKit
   during intermediate updates.
-- `apply(from:to:animated:mode:)`, which receives validated `CollectionComposition`
+- `apply(from:to:animated:mode:)`, which receives validated `CollectionSnapshot`
   values containing captured sections, items, supplementary presenters, layouts and
   lookup tables. It owns stage installation and layout invalidation, and returns after
   UIKit reaches the target, optionally returning recovery diagnostics. It must reload
@@ -264,7 +366,7 @@ A custom implementation supplies three things:
 Parade keeps submission capture/validation, FIFO ordering, registration preparation,
 delegate handling, actual-view lifecycle bindings, final behavior refresh, diagnostics,
 and public completion. A bare `UICollectionViewDataSource` does not describe how to
-apply a new composition or when that update finishes, hence the additional protocol.
+apply a new snapshot or when that update finishes, hence the additional protocol.
 Custom implementations own their content-update policy; they may conservatively
 reload changed content. The two supplied implementations share Parade's fixed
 replacement, reconfiguration, and supplementary update rules internally.

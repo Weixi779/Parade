@@ -1,5 +1,72 @@
 # Verification
 
+## 0.3.0 release review — 2026-09-23
+
+Reviewed the complete change from 0.2.0: public API renaming, section reconciliation,
+attachment/visibility ownership, queued updates, callback ordering and reentrancy,
+same-ID replacement, stale view callbacks, and instance/resource release.
+The data-source and diff changes are naming changes; their update behavior is preserved.
+
+| Check | Result |
+| --- | --- |
+| Full package and UIKit regression, Xcode 27.0 / iOS 27.0 | 126 tests in 12 suites passed |
+| Default and diffable source integration | Passed |
+| Standalone examples compiled against the public API | Passed, targeting iOS 16 Simulator |
+| IM and Store example smoke checks | All 10 passed |
+
+The full run took 14.838 seconds. Its result bundle is
+`/private/tmp/parade-0.3.0-review-20260923.xcresult`. The example report is
+`Documents/smoke.json` in the simulator application's data container. The existing
+standalone-build linker sysroot warning remains; the build and runtime checks passed.
+
+Lifecycle tests cover independent attachment and collection visibility, offscreen
+sections, first/last displayed views, supplementary-only sections, cross-section
+cell transfers, same-ID replacement with a retained cell, delayed end callbacks,
+visibility changes during suspended updates, callback reentrancy, and owner teardown.
+The store-specific tests and their failure/retry boundaries are described below.
+These local checks do not establish older-toolchain compatibility, iOS 16 runtime
+behavior, real-device performance, or animated visual quality; CI separately checks
+the minimum compiler and its configured simulator runtime.
+
+## Content and snapshot naming — 2026-09-23
+
+Renamed the output contract to `SectionContent` / `DefaultSectionContent` and
+`SectionPresenter.captureContent()`, with associated type `Content`. Captured section
+and collection versions are now `SectionSnapshot` and `CollectionSnapshot`.
+Public access levels, data-source injection, and runtime behavior remain unchanged.
+The migration mapping is in [the changelog](../CHANGELOG.md#api-naming-changes).
+
+The complete suite passed **126 tests in 12 suites** in 14.777 seconds on
+Xcode 27.0 / iOS 27.0. The result bundle is
+`/private/tmp/ParadeNaming-20260923.xcresult`. These checks cover the renamed public
+API and existing behavior. The standalone examples also compiled successfully using
+only `import Parade`, targeting iOS 16 Simulator; the example build emitted its
+existing linker sysroot warning. Local documentation links resolve. These checks
+do not establish older-runtime or device behavior.
+
+## SectionStore integration — 2026-09-23
+
+Added 23 public-API tests (35 cases after parameter expansion): 17 reconciliation
+tests and six UIKit integration tests exercised with both supplied data sources.
+They verify identity/state preservation, heterogeneous types, replacement and
+reinsertion, ordered changes, duplicate rejection before side effects, input/closure
+and presenter lifetimes, suspended acceptance, failure/cancellation and retry.
+Integration checks inspect actual cells and layouts, attachment changes, rejected
+structure/content preserving the displayed baseline, and atomic retained-cell transfers.
+Async acceptance uses an explicit continuation gate rather than timing sleeps.
+
+The final combined working-tree suite passed **126 tests in 12 suites** in 14.663
+seconds on Xcode 27.0 / iOS 27.0 (iPhone 18 Pro). The result bundle is
+`/private/tmp/ParadeSectionStore-20260923-final.xcresult`. Source and test hashes
+were unchanged during this run. An iOS device build targeting `arm64-apple-ios16.0`
+also passed with the installed Xcode 27 toolchain; this does not verify Xcode 16
+compiler compatibility or iOS 16 runtime behavior.
+
+Coverage records all 60 executable lines of `SectionStore` and 34/36 lines of
+`SectionDefinition`. The two unexecuted closures produce messages for failing ID
+preconditions; intentional process-termination tests are not included. Line coverage
+is supporting evidence, not a substitute for the behavioral assertions above.
+
 ## 0.2.0 release preparation — 2026-09-21
 
 Verified locally with Xcode 27.0 (27A266a), Swift 6 language mode, and an iPhone 18 Pro /
