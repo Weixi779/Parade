@@ -266,8 +266,8 @@ private final class MessageDayPresenter: SectionPresenter {
         }
     }
 
-    func capturePresentation() -> DefaultSectionPresentation {
-        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> DefaultSectionContent {
+        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
             makeVerticalSection(estimatedHeight: 96, hasHeader: true)
         }
     }
@@ -324,8 +324,8 @@ private final class FeaturedSectionPresenter: StoreSectionPresenter {
         self.open = open
     }
 
-    func capturePresentation() -> DefaultSectionPresentation {
-        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> DefaultSectionContent {
+        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
             let item = NSCollectionLayoutItem(layoutSize: .init(
                 widthDimension: .fractionalWidth(1),
                 heightDimension: .fractionalHeight(1)
@@ -382,8 +382,8 @@ private final class RankingSectionPresenter: StoreSectionPresenter {
         self.open = open
     }
 
-    func capturePresentation() -> DefaultSectionPresentation {
-        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> DefaultSectionContent {
+        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
             return makeVerticalSection(estimatedHeight: 92, hasHeader: true)
         }
     }
@@ -425,8 +425,8 @@ private final class RecommendationSectionPresenter: StoreSectionPresenter {
         self.open = open
     }
 
-    func capturePresentation() -> DefaultSectionPresentation {
-        DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> DefaultSectionContent {
+        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
             return makeVerticalSection(estimatedHeight: 130, hasHeader: true)
         }
     }

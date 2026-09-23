@@ -7,11 +7,11 @@ import Foundation
 @MainActor
 public protocol SectionPresenter: AnyObject {
     associatedtype Id: Hashable
-    associatedtype Presentation: SectionPresentation
+    associatedtype Content: SectionContent
 
     var id: Id { get }
     var updates: SectionUpdateContext { get }
-    func capturePresentation() -> Presentation
+    func captureContent() -> Content
 }
 
 public extension SectionPresenter {

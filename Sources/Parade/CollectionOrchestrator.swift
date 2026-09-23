@@ -36,6 +36,22 @@ public final class CollectionOrchestrator {
     public private(set) var isApplying = false
     public private(set) var appliedRevision: UInt64 = 0
 
+    /// The collection's visibility as reported by the application.
+    /// Independent from individual cell display and app activity.
+    public private(set) var isVisible = false
+
+    /// Immediately notifies attached modules, including during a content update.
+    /// Newly attached modules begin displaying after their update settles if visible.
+    /// Section display additionally requires a displayed cell or supplementary view.
+    public func setVisible(_ isVisible: Bool) {
+        guard self.isVisible != isVisible else { return }
+        self.isVisible = isVisible
+        for member in members.values {
+            // A callback can change visibility again; use the latest value.
+            member.setVisible(self.isVisible)
+        }
+    }
+
     /// Queries describe the data source version currently used by UIKit. While an
     /// update is in progress this can be an intermediate stage, not the next target.
     public var sectionIds: [AnyHashable] { source.sectionIds }
@@ -46,7 +62,12 @@ public final class CollectionOrchestrator {
     private let bridge: CollectionViewBridge
     private let source: any CollectionDataSource
     private var members: [ObjectIdentifier: Member] = [:]
-    private var appliedComposition = CollectionComposition.empty
+    // View bindings use the destination attachment during an update. Notifications
+    // settle after the transaction, so intermediate UIKit stages cannot flicker them.
+    private var displayMembers: [AnyHashable: Member] = [:]
+    private var isUpdatingDisplay = false
+    private var displayedSections = Set<SectionDisplayIdentity>()
+    private var appliedSnapshot = CollectionSnapshot.empty
     private let submissions: AsyncStream<Submission>.Continuation
     private var pendingCount = 0
     private var emptyView: UIView?
@@ -115,7 +136,15 @@ public final class CollectionOrchestrator {
         }
     }
 
-    deinit { submissions.finish() }
+    deinit {
+        submissions.finish()
+        // Swift 6.0 does not isolate deinit. Keep the attachment alive until its
+        // MainActor cleanup finishes, so it cannot be reused before didDetach.
+        let attached = members
+        Task { @MainActor in
+            for member in attached.values { member.detach() }
+        }
+    }
 
     /// Changes membership and order. Surviving instances retain their latest
     /// accepted content; instances absent at execution use this call's capture.
@@ -129,7 +158,7 @@ public final class CollectionOrchestrator {
         let incoming = sections.map { Member($0) }
         // An earlier queued operation can remove a currently attached instance.
         // Keep a fresh capture for reattachment, even if it appears to survive now.
-        let captured = incoming.map { $0.capture() }
+        let captured = incoming.map { $0.captureSnapshot() }
         // Membership constraints are unconditional. Captured content is only a
         // fallback: earlier operations may attach or remove any incoming instance.
         // Validate content after execution selects the version it will actually use.
@@ -149,9 +178,9 @@ public final class CollectionOrchestrator {
             }
         }
         var accepted: [ObjectIdentifier: Member] = [:]
-        submit(Submission(makeTarget: { baseline throws(CollectionComposition.ValidationFailure) in
+        submit(Submission(makeTarget: { baseline throws(CollectionSnapshot.ValidationFailure) in
             var next: [ObjectIdentifier: Member] = [:]
-            var contents: [CapturedSection] = []
+            var contents: [SectionSnapshot] = []
             for (index, candidate) in incoming.enumerated() {
                 if let current = self.members[candidate.identity] {
                     guard current.id == candidate.id, let content = baseline.sectionsById[current.id] else {
@@ -165,17 +194,20 @@ public final class CollectionOrchestrator {
                     contents.append(captured[index])
                 }
             }
-            let target = try CollectionComposition(contents)
+            let target = try CollectionSnapshot(contents)
             // Reserve new contexts before UIKit suspends, so another collection
             // cannot attach the same module while this operation is in flight.
             for member in next.values where self.members[member.identity] == nil {
                 member.context.owner = member
             }
             accepted = next
+            self.displayMembers = Dictionary(uniqueKeysWithValues: next.values.map { ($0.id, $0) })
             return target
         }, animated: animated, mode: mode, didApply: { [self] in
-            for member in self.members.values where accepted[member.identity] !== member {
-                member.context.disconnect(from: member)
+            let removed = self.members.values.filter { accepted[$0.identity] !== $0 }
+            let added = incoming.compactMap { candidate -> Member? in
+                guard self.members[candidate.identity] == nil else { return nil }
+                return accepted[candidate.identity]
             }
             self.members = accepted
             for member in accepted.values {
@@ -184,6 +216,9 @@ public final class CollectionOrchestrator {
                     try await self.updateMembers([member], animated: animated, mode: mode)
                 }
             }
+            for member in removed { member.detach() }
+            for member in added { member.attach() }
+            for member in added { member.setVisible(isVisible) }
         }, completion: completion))
     }
 
@@ -250,14 +285,14 @@ public final class CollectionOrchestrator {
     }
 
     private struct Submission {
-        let makeTarget: @MainActor (CollectionComposition) throws(CollectionComposition.ValidationFailure) -> CollectionComposition
+        let makeTarget: @MainActor (CollectionSnapshot) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot
         let animated: Bool
         let mode: CollectionUpdateMode
         let didApply: @MainActor () -> Void
         let completion: @MainActor (Result<Void, CollectionUpdateError>) -> Void
 
         init(
-            makeTarget: @escaping @MainActor (CollectionComposition) throws(CollectionComposition.ValidationFailure) -> CollectionComposition,
+            makeTarget: @escaping @MainActor (CollectionSnapshot) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot,
             animated: Bool,
             mode: CollectionUpdateMode,
             didApply: @escaping @MainActor () -> Void = {},
@@ -276,7 +311,7 @@ public final class CollectionOrchestrator {
     func enqueue(
         animated: Bool,
         mode: CollectionUpdateMode,
-        makeTarget: @escaping @MainActor (CollectionComposition) throws(CollectionComposition.ValidationFailure) -> CollectionComposition,
+        makeTarget: @escaping @MainActor (CollectionSnapshot) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot,
         didApply: @escaping @MainActor () -> Void = {}
     ) async throws {
         try await withCheckedThrowingContinuation { continuation in
@@ -304,11 +339,14 @@ public final class CollectionOrchestrator {
 
     private func execute(_ submission: Submission) async {
         do {
-            let target = try submission.makeTarget(appliedComposition)
+            let target = try submission.makeTarget(appliedSnapshot)
+            isUpdatingDisplay = true
             await apply(target, animated: submission.animated, mode: submission.mode)
-            appliedComposition = target
+            appliedSnapshot = target
             appliedRevision &+= 1
             submission.didApply()
+            isUpdatingDisplay = false
+            synchronizeSectionDisplay()
             refreshEmptyView()
             deliverDiagnostics()
             onDidApply?(self)
@@ -322,7 +360,25 @@ public final class CollectionOrchestrator {
         scheduleDiagnosticDelivery()
     }
 
-    private func apply(_ target: CollectionComposition, animated: Bool, mode: CollectionUpdateMode) async {
+    func sectionDisplayIdentity(for sectionId: AnyHashable?) -> SectionDisplayIdentity? {
+        guard let sectionId else { return nil }
+        return displayMembers[sectionId]?.displayIdentity
+    }
+
+    func synchronizeSectionDisplay() {
+        guard !isUpdatingDisplay else { return }
+        let previous = displayedSections
+        displayedSections = bridge.displayedSectionIdentities()
+        for identity in previous.symmetricDifference(displayedSections) {
+            guard let member = displayMembers[identity.sectionId],
+                  member.displayIdentity === identity else { continue }
+            // Reentrant callbacks can change the aggregate. Read its latest value,
+            // and visit only changed sections rather than every attached feed item.
+            member.setHasDisplayedContent(displayedSections.contains(identity))
+        }
+    }
+
+    private func apply(_ target: CollectionSnapshot, animated: Bool, mode: CollectionUpdateMode) async {
         // Native registrations must exist before any data-source callback. Prepare
         // at execution so submissions from configure/display callbacks stay safe.
         for section in target.sections {
@@ -330,7 +386,7 @@ public final class CollectionOrchestrator {
             for presenter in section.supplementaryViews { registry.prepare(presenter) }
         }
         let recovered = await source.apply(
-            from: appliedComposition,
+            from: appliedSnapshot,
             to: target,
             animated: animated,
             mode: mode
@@ -386,7 +442,7 @@ public final class CollectionOrchestrator {
         previousBackgroundView = nil
     }
     private func updateMembers(_ selected: [Member], animated: Bool, mode: CollectionUpdateMode) async throws {
-        let captured = selected.map { $0.capture() }
+        let captured = selected.map { $0.captureSnapshot() }
         do { try validateLocally(captured) }
         catch {
             report(error.diagnostic)
@@ -395,29 +451,29 @@ public final class CollectionOrchestrator {
         for (index, member) in selected.enumerated() where captured[index].id != member.id {
             throw CollectionUpdateError.staleSectionInstance(String(describing: member.id))
         }
-        try await enqueue(animated: animated, mode: mode, makeTarget: { baseline throws(CollectionComposition.ValidationFailure) in
+        try await enqueue(animated: animated, mode: mode, makeTarget: { baseline throws(CollectionSnapshot.ValidationFailure) in
             for member in selected {
                 guard self.members[member.identity] === member else {
                     throw self.failure(.staleSectionInstance(String(describing: member.id)))
                 }
             }
             let replacements = Dictionary(uniqueKeysWithValues: captured.map { ($0.id, $0) })
-            return try CollectionComposition(baseline.sections.map { replacements[$0.id] ?? $0 })
+            return try CollectionSnapshot(baseline.sections.map { replacements[$0.id] ?? $0 })
         })
     }
 
-    private func validateLocally(_ contents: [CapturedSection]) throws(CollectionComposition.ValidationFailure) {
+    private func validateLocally(_ contents: [SectionSnapshot]) throws(CollectionSnapshot.ValidationFailure) {
         var ids: [AnyHashable: Int] = [:]
         for (index, content) in contents.enumerated() {
             if let first = ids.updateValue(index, forKey: content.id) {
-                throw CollectionComposition.ValidationFailure(
+                throw CollectionSnapshot.ValidationFailure(
                     .duplicateSectionId(String(describing: content.id)),
                     locations: [.init(section: first), .init(section: index)]
                 )
             }
-            do { _ = try CollectionComposition([content]) }
+            do { _ = try CollectionSnapshot([content]) }
             catch {
-                throw CollectionComposition.ValidationFailure(
+                throw CollectionSnapshot.ValidationFailure(
                     error.error,
                     locations: error.diagnostic.locations.map { .init(section: index, item: $0.item) }
                 )
@@ -426,14 +482,14 @@ public final class CollectionOrchestrator {
     }
 
     private func reject(
-        _ failure: CollectionComposition.ValidationFailure,
+        _ failure: CollectionSnapshot.ValidationFailure,
         completion: @MainActor (Result<Void, CollectionUpdateError>) -> Void
     ) {
         report(failure.diagnostic)
         completion(.failure(failure.error))
     }
 
-    private func failure(_ error: CollectionUpdateError) -> CollectionComposition.ValidationFailure {
+    private func failure(_ error: CollectionUpdateError) -> CollectionSnapshot.ValidationFailure {
         .init(error, locations: [])
     }
 
@@ -443,14 +499,76 @@ public final class CollectionOrchestrator {
         let identity: ObjectIdentifier
         let context: SectionUpdateContext
         let section: any SectionPresenter
+        let displayIdentity: SectionDisplayIdentity
+        private var isAttached = false
+        private var isCollectionVisible = false
+        private var hasDisplayedContent = false
+        private var isCollectionDisplayed = false
+        private var isSectionDisplayed = false
+        private var isNotifyingDisplay = false
 
         init<S: SectionPresenter>(_ section: S) {
             id = AnyHashable(section.id)
+            displayIdentity = SectionDisplayIdentity(sectionId: id)
             identity = ObjectIdentifier(section)
             context = section.updates
             self.section = section
         }
 
-        func capture() -> CapturedSection { CapturedSection(capturing: section) }
+        func captureSnapshot() -> SectionSnapshot { SectionSnapshot(capturing: section) }
+
+        func attach() {
+            (section as? any SectionAttachmentObserving)?.didAttach()
+            isAttached = true
+        }
+
+        func setVisible(_ isVisible: Bool) {
+            guard isAttached else { return }
+            isCollectionVisible = isVisible
+            synchronizeDisplay()
+        }
+
+        func setHasDisplayedContent(_ hasContent: Bool) {
+            hasDisplayedContent = hasContent
+            synchronizeDisplay()
+        }
+
+        func detach() {
+            guard isAttached else { return }
+            isAttached = false
+            context.disconnect(from: self)
+            synchronizeDisplay()
+            (section as? any SectionAttachmentObserving)?.didDetach()
+        }
+
+        private func synchronizeDisplay() {
+            guard !isNotifyingDisplay else { return }
+            isNotifyingDisplay = true
+            defer { isNotifyingDisplay = false }
+
+            // A callback may change the desired state. Finish it before delivering
+            // another edge, then reevaluate so each begin/end pair stays balanced.
+            while true {
+                let collectionShouldDisplay = isAttached && isCollectionVisible
+                let sectionShouldDisplay = collectionShouldDisplay && hasDisplayedContent
+                if isSectionDisplayed && !sectionShouldDisplay {
+                    isSectionDisplayed = false
+                    (section as? any SectionDisplayObserving)?.sectionDidEndDisplaying()
+                } else if isCollectionDisplayed != collectionShouldDisplay {
+                    isCollectionDisplayed = collectionShouldDisplay
+                    let observer = section as? any CollectionDisplayObserving
+                    if collectionShouldDisplay {
+                        observer?.collectionWillDisplay()
+                    } else {
+                        observer?.collectionDidEndDisplaying()
+                    }
+                } else if isSectionDisplayed != sectionShouldDisplay {
+                    isSectionDisplayed = sectionShouldDisplay
+                    (section as? any SectionDisplayObserving)?.sectionWillDisplay()
+                } else {
+                    return
+                }
+            }
+        }
     }
 }

@@ -2,11 +2,12 @@
 
 import Foundation
 
-/// A captured, validated input. Only these compositions may become an applied
-/// baseline or a reload target; intermediate contents belong to update batches.
-public struct CollectionComposition {
-    public let sections: [CapturedSection]
-    public let sectionsById: [AnyHashable: CapturedSection]
+/// A validated display version of the whole collection, with section and cell indexes.
+/// Completed baselines and update targets use these snapshots; intermediate section
+/// snapshots belong to update batches. This stores captured content, not live section instances.
+public struct CollectionSnapshot {
+    public let sections: [SectionSnapshot]
+    public let sectionsById: [AnyHashable: SectionSnapshot]
     public let cellsById: [AnyHashable: AnyCellPresenter]
 
     public static var empty: Self { Self() }
@@ -18,7 +19,7 @@ public struct CollectionComposition {
     }
 
     /// Validate each section completely before the next, preserving error order.
-    init(_ sections: [CapturedSection]) throws(ValidationFailure) {
+    init(_ sections: [SectionSnapshot]) throws(ValidationFailure) {
         var sectionLocations = [AnyHashable: Int](minimumCapacity: sections.count)
         var cellLocations: [AnyHashable: ItemLocation] = [:]
         for (sectionIndex, section) in sections.enumerated() {
@@ -60,7 +61,7 @@ public struct CollectionComposition {
     }
 }
 
-private extension CollectionComposition {
+private extension CollectionSnapshot {
     struct SupplementaryAddress: Hashable {
         let kind: String
         let item: Int
@@ -72,7 +73,7 @@ private extension CollectionComposition {
     }
 
     static func validateSupplementaries(
-        in section: CapturedSection,
+        in section: SectionSnapshot,
         at sectionIndex: Int
     ) throws(ValidationFailure) {
         let sectionDescription = String(describing: section.id)

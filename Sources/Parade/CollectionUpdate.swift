@@ -2,7 +2,7 @@
 //  Created by weixi on 2026/9/17.
 //
 
-/// How a submitted composition replaces the last applied composition.
+/// How a submitted snapshot replaces the last applied snapshot.
 public enum CollectionUpdateMode: Sendable {
     case diff
     case reload

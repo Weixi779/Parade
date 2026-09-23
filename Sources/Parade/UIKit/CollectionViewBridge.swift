@@ -2,6 +2,17 @@
 
 import UIKit
 
+/// A distinct attachment, retained by view bindings without retaining its section.
+/// Stable business IDs may be reused while old display callbacks are still pending.
+final class SectionDisplayIdentity: Hashable {
+    let sectionId: AnyHashable
+
+    init(sectionId: AnyHashable) { self.sectionId = sectionId }
+
+    static func == (lhs: SectionDisplayIdentity, rhs: SectionDisplayIdentity) -> Bool { lhs === rhs }
+    func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
+}
+
 /// Owns fixed view creation, bindings and UIKit delegate handling.
 ///
 /// Only scroll callbacks are forwarded. Selection, highlighting,
@@ -18,6 +29,11 @@ final class CollectionViewBridge: NSObject,
     private final class EmptyCell: UICollectionViewCell {}
     private static let emptyViewReuseIdentifier = "Parade.CollectionViewBridge.empty"
     private var emptySupplementaryKinds = Set<String>()
+
+    func displayedSectionIdentities() -> Set<SectionDisplayIdentity> {
+        removeDeallocatedViews()
+        return Set(cells.values.compactMap(\.displayedSection) + supplementaryViews.values.compactMap(\.displayedSection))
+    }
 
     // MARK: - Initialization
 
@@ -46,7 +62,8 @@ final class CollectionViewBridge: NSObject,
                   let record = cells[ObjectIdentifier(cell)] else { continue }
             record.refreshBehaviors(
                 presenter: owner.cellPresenter(at: indexPath),
-                sectionId: owner.sectionId(at: indexPath.section)
+                sectionId: owner.sectionId(at: indexPath.section),
+                sectionDisplayIdentity: owner.sectionDisplayIdentity(for: owner.sectionId(at: indexPath.section))
             )
         }
 
@@ -55,7 +72,8 @@ final class CollectionViewBridge: NSObject,
             guard let indexPath = visibleIndexPath(for: record, in: collectionView) else { continue }
             record.refreshBehaviors(
                 presenter: owner.supplementaryPresenter(ofKind: record.current.presenter.elementKind, at: indexPath),
-                sectionId: owner.sectionId(at: indexPath.section)
+                sectionId: owner.sectionId(at: indexPath.section),
+                sectionDisplayIdentity: owner.sectionDisplayIdentity(for: owner.sectionId(at: indexPath.section))
             )
         }
     }
@@ -184,9 +202,11 @@ extension CollectionViewBridge {
         guard let record = cells[ObjectIdentifier(cell)] else { return }
         let binding = record.prepareForDisplay(
             presenter: owner?.cellPresenter(at: indexPath),
-            sectionId: owner?.sectionId(at: indexPath.section)
+            sectionId: owner?.sectionId(at: indexPath.section),
+            sectionDisplayIdentity: owner?.sectionDisplayIdentity(for: owner?.sectionId(at: indexPath.section))
         )
         record.beginDisplay(binding, at: indexPath)
+        owner?.synchronizeSectionDisplay()
         let observer = binding.presenter.underlyingPresenter as? any CellDisplayObserving
         observer?.dispatchWillDisplay(to: cell)
     }
@@ -199,6 +219,7 @@ extension CollectionViewBridge {
         guard let binding = cells[ObjectIdentifier(cell)]?.endDisplay(at: indexPath) else { return }
         let observer = binding.presenter.underlyingPresenter as? any CellDisplayObserving
         observer?.dispatchDidEndDisplaying(to: cell)
+        owner?.synchronizeSectionDisplay()
     }
 
     func collectionView(
@@ -210,9 +231,11 @@ extension CollectionViewBridge {
         guard let record = supplementaryViews[ObjectIdentifier(view)] else { return }
         let binding = record.prepareForDisplay(
             presenter: owner?.supplementaryPresenter(ofKind: elementKind, at: indexPath),
-            sectionId: owner?.sectionId(at: indexPath.section)
+            sectionId: owner?.sectionId(at: indexPath.section),
+            sectionDisplayIdentity: owner?.sectionDisplayIdentity(for: owner?.sectionId(at: indexPath.section))
         )
         record.beginDisplay(binding, at: indexPath)
+        owner?.synchronizeSectionDisplay()
         let observer = binding.presenter.underlyingPresenter as? any SupplementaryDisplayObserving
         observer?.dispatchWillDisplay(to: view)
     }
@@ -231,6 +254,7 @@ extension CollectionViewBridge {
         }
         let observer = binding.presenter.underlyingPresenter as? any SupplementaryDisplayObserving
         observer?.dispatchDidEndDisplaying(to: view)
+        owner?.synchronizeSectionDisplay()
     }
 }
 
@@ -312,31 +336,48 @@ private extension CollectionViewBridge {
     struct CellBinding {
         let generation: UInt64
         let sectionId: AnyHashable
+        let sectionDisplayIdentity: SectionDisplayIdentity?
         let presenter: AnyCellPresenter
 
-        func updating(to presenter: AnyCellPresenter, in sectionId: AnyHashable) -> Self? {
+        func updating(
+            to presenter: AnyCellPresenter,
+            in sectionId: AnyHashable,
+            sectionDisplayIdentity: SectionDisplayIdentity?
+        ) -> Self? {
             guard self.presenter.id == presenter.id,
                   self.presenter.registrationKey == presenter.registrationKey else { return nil }
-            return Self(generation: generation, sectionId: sectionId, presenter: presenter)
+            return Self(
+                generation: generation, sectionId: sectionId,
+                sectionDisplayIdentity: sectionDisplayIdentity, presenter: presenter
+            )
         }
     }
 
     struct SupplementaryBinding {
         let generation: UInt64
         let sectionId: AnyHashable
+        let sectionDisplayIdentity: SectionDisplayIdentity?
         let presenter: AnySupplementaryPresenter
 
-        func updating(to presenter: AnySupplementaryPresenter, in sectionId: AnyHashable) -> Self? {
+        func updating(
+            to presenter: AnySupplementaryPresenter,
+            in sectionId: AnyHashable,
+            sectionDisplayIdentity: SectionDisplayIdentity?
+        ) -> Self? {
             guard self.sectionId == sectionId,
                   self.presenter.id == presenter.id,
                   self.presenter.registrationKey == presenter.registrationKey else { return nil }
-            return Self(generation: generation, sectionId: sectionId, presenter: presenter)
+            return Self(
+                generation: generation, sectionId: sectionId,
+                sectionDisplayIdentity: sectionDisplayIdentity, presenter: presenter
+            )
         }
     }
 
     struct DisplayBinding<Binding> {
         let indexPath: IndexPath
         var binding: Binding
+        var sectionDisplayIdentity: SectionDisplayIdentity?
     }
 }
 
@@ -349,6 +390,16 @@ private extension CollectionViewBridge {
         private(set) var current: CellBinding
         private var displayed: [DisplayBinding<CellBinding>] = []
 
+        var displayedSection: SectionDisplayIdentity? {
+            // Older cycles remain for delayed cell callbacks, but a reused view
+            // contributes only its latest display to section visibility.
+            guard let display = displayed.last,
+                  display.binding.generation == current.generation,
+                  let identity = display.sectionDisplayIdentity,
+                  identity === current.sectionDisplayIdentity else { return nil }
+            return identity
+        }
+
         init(view: UICollectionViewCell, binding: CellBinding) {
             self.view = view
             current = binding
@@ -357,31 +408,52 @@ private extension CollectionViewBridge {
         func bind(
             _ presenter: AnyCellPresenter,
             in sectionId: AnyHashable,
+            sectionDisplayIdentity: SectionDisplayIdentity?,
             newGeneration: @autoclosure () -> UInt64
         ) {
             // A reconfiguration of the same logical cell retains its display generation.
-            if let binding = current.updating(to: presenter, in: sectionId) {
+            if let binding = current.updating(
+                to: presenter, in: sectionId, sectionDisplayIdentity: sectionDisplayIdentity
+            ) {
                 updateBinding(binding)
             } else {
                 current = CellBinding(
                     generation: newGeneration(),
                     sectionId: sectionId,
+                    sectionDisplayIdentity: sectionDisplayIdentity,
                     presenter: presenter
                 )
             }
         }
 
-        func refreshBehaviors(presenter: AnyCellPresenter?, sectionId: AnyHashable?) {
+        func refreshBehaviors(
+            presenter: AnyCellPresenter?,
+            sectionId: AnyHashable?,
+            sectionDisplayIdentity: SectionDisplayIdentity?
+        ) {
             guard let view, let presenter, let sectionId,
-                  let binding = current.updating(to: presenter, in: sectionId) else { return }
+                  let binding = current.updating(
+                      to: presenter, in: sectionId, sectionDisplayIdentity: sectionDisplayIdentity
+                  ) else { return }
             updateBinding(binding)
+            // This refresh is called only for the actual visible view. Transfer its
+            // current display when the section changes without another willDisplay.
+            if !displayed.isEmpty {
+                displayed[displayed.count - 1].sectionDisplayIdentity = sectionDisplayIdentity
+            }
             presenter.setBehaviors(view)
         }
 
-        func prepareForDisplay(presenter: AnyCellPresenter?, sectionId: AnyHashable?) -> CellBinding {
+        func prepareForDisplay(
+            presenter: AnyCellPresenter?,
+            sectionId: AnyHashable?,
+            sectionDisplayIdentity: SectionDisplayIdentity?
+        ) -> CellBinding {
             let previous = current
             guard let view, let presenter, let sectionId,
-                  let binding = previous.updating(to: presenter, in: sectionId) else {
+                  let binding = previous.updating(
+                      to: presenter, in: sectionId, sectionDisplayIdentity: sectionDisplayIdentity
+                  ) else {
                 return previous
             }
             // Prepared views can reappear without another dequeue or visible refresh.
@@ -394,7 +466,10 @@ private extension CollectionViewBridge {
         }
 
         func beginDisplay(_ binding: CellBinding, at indexPath: IndexPath) {
-            displayed.append(DisplayBinding(indexPath: indexPath, binding: binding))
+            displayed.append(DisplayBinding(
+                indexPath: indexPath, binding: binding,
+                sectionDisplayIdentity: binding.sectionDisplayIdentity
+            ))
         }
 
         func endDisplay(at indexPath: IndexPath) -> CellBinding? {
@@ -425,6 +500,16 @@ private extension CollectionViewBridge {
         private(set) var current: SupplementaryBinding
         private var displayed: [DisplayBinding<SupplementaryBinding>] = []
 
+        var displayedSection: SectionDisplayIdentity? {
+            // Older cycles remain for delayed cell callbacks, but a reused view
+            // contributes only its latest display to section visibility.
+            guard let display = displayed.last,
+                  display.binding.generation == current.generation,
+                  let identity = display.sectionDisplayIdentity,
+                  identity === current.sectionDisplayIdentity else { return nil }
+            return identity
+        }
+
         init(view: UICollectionReusableView, binding: SupplementaryBinding) {
             self.view = view
             current = binding
@@ -433,33 +518,51 @@ private extension CollectionViewBridge {
         func bind(
             _ presenter: AnySupplementaryPresenter,
             in sectionId: AnyHashable,
+            sectionDisplayIdentity: SectionDisplayIdentity?,
             newGeneration: @autoclosure () -> UInt64
         ) {
-            if let binding = current.updating(to: presenter, in: sectionId) {
+            if let binding = current.updating(
+                to: presenter, in: sectionId, sectionDisplayIdentity: sectionDisplayIdentity
+            ) {
                 updateBinding(binding)
             } else {
                 current = SupplementaryBinding(
                     generation: newGeneration(),
                     sectionId: sectionId,
+                    sectionDisplayIdentity: sectionDisplayIdentity,
                     presenter: presenter
                 )
             }
         }
 
-        func refreshBehaviors(presenter: AnySupplementaryPresenter?, sectionId: AnyHashable?) {
+        func refreshBehaviors(
+            presenter: AnySupplementaryPresenter?,
+            sectionId: AnyHashable?,
+            sectionDisplayIdentity: SectionDisplayIdentity?
+        ) {
             guard let view, let presenter, let sectionId,
-                  let binding = current.updating(to: presenter, in: sectionId) else { return }
+                  let binding = current.updating(
+                      to: presenter, in: sectionId, sectionDisplayIdentity: sectionDisplayIdentity
+                  ) else { return }
             updateBinding(binding)
+            // This refresh is called only for the actual visible view. Transfer its
+            // current display when the section changes without another willDisplay.
+            if !displayed.isEmpty {
+                displayed[displayed.count - 1].sectionDisplayIdentity = sectionDisplayIdentity
+            }
             presenter.setBehaviors(view)
         }
 
         func prepareForDisplay(
             presenter: AnySupplementaryPresenter?,
-            sectionId: AnyHashable?
+            sectionId: AnyHashable?,
+            sectionDisplayIdentity: SectionDisplayIdentity?
         ) -> SupplementaryBinding {
             let previous = current
             guard let view, let presenter, let sectionId,
-                  let binding = previous.updating(to: presenter, in: sectionId) else {
+                  let binding = previous.updating(
+                      to: presenter, in: sectionId, sectionDisplayIdentity: sectionDisplayIdentity
+                  ) else {
                 return previous
             }
             let needsConfiguration = previous.presenter != presenter
@@ -470,7 +573,10 @@ private extension CollectionViewBridge {
         }
 
         func beginDisplay(_ binding: SupplementaryBinding, at indexPath: IndexPath) {
-            displayed.append(DisplayBinding(indexPath: indexPath, binding: binding))
+            displayed.append(DisplayBinding(
+                indexPath: indexPath, binding: binding,
+                sectionDisplayIdentity: binding.sectionDisplayIdentity
+            ))
         }
 
         func endDisplay(ofKind kind: String, at indexPath: IndexPath) -> SupplementaryBinding? {
@@ -503,12 +609,17 @@ private extension CollectionViewBridge {
     ) {
         let key = ObjectIdentifier(cell)
         if let record = cells[key], record.view === cell {
-            record.bind(presenter, in: sectionId, newGeneration: generation())
+            record.bind(
+                presenter, in: sectionId,
+                sectionDisplayIdentity: owner?.sectionDisplayIdentity(for: sectionId),
+                newGeneration: generation()
+            )
             return
         }
         let binding = CellBinding(
             generation: generation(),
             sectionId: sectionId,
+            sectionDisplayIdentity: owner?.sectionDisplayIdentity(for: sectionId),
             presenter: presenter
         )
         cells[key] = CellRecord(view: cell, binding: binding)
@@ -521,12 +632,17 @@ private extension CollectionViewBridge {
     ) {
         let key = ObjectIdentifier(view)
         if let record = supplementaryViews[key], record.view === view {
-            record.bind(presenter, in: sectionId, newGeneration: generation())
+            record.bind(
+                presenter, in: sectionId,
+                sectionDisplayIdentity: owner?.sectionDisplayIdentity(for: sectionId),
+                newGeneration: generation()
+            )
             return
         }
         let binding = SupplementaryBinding(
             generation: generation(),
             sectionId: sectionId,
+            sectionDisplayIdentity: owner?.sectionDisplayIdentity(for: sectionId),
             presenter: presenter
         )
         supplementaryViews[key] = SupplementaryRecord(view: view, binding: binding)

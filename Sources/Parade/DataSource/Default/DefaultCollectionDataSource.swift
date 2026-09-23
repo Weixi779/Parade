@@ -12,7 +12,7 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
     private var sectionLocations: [AnyHashable: Int] = [:]
     private var cellLocations: [AnyHashable: IndexPath] = [:]
 
-    var sections: [CapturedSection] = [] {
+    var sections: [SectionSnapshot] = [] {
         didSet {
             sectionLocations.removeAll(keepingCapacity: true)
             cellLocations.removeAll(keepingCapacity: true)
@@ -63,8 +63,8 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
     }
 
     public func apply(
-        from source: CollectionComposition,
-        to target: CollectionComposition,
+        from source: CollectionSnapshot,
+        to target: CollectionSnapshot,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic] {
@@ -156,11 +156,11 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
         supplementaryProvider(collectionView, kind, indexPath, supplementaryPresenter(ofKind: kind, at: indexPath))
     }
 
-    private func section(at index: Int) -> CapturedSection? {
+    private func section(at index: Int) -> SectionSnapshot? {
         sections.indices.contains(index) ? sections[index] : nil
     }
 
-    private func reload(_ target: CollectionComposition) {
+    private func reload(_ target: CollectionSnapshot) {
         sections = target.sections
         collectionView.collectionViewLayout.invalidateLayout()
         collectionView.reloadData()

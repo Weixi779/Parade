@@ -46,7 +46,7 @@ struct CollectionViewBridgeTests {
 
         // This is the instant between installing new data-source counts and
         // UIKit delivering the disappearing old cell's end-display callback.
-        fixture.installDisplayVersion([CapturedSection(
+        fixture.installDisplayVersion([SectionSnapshot(
             id: "section",
             cells: [self.cell("new", token: "new", events: events)]
         )])
@@ -115,7 +115,7 @@ struct CollectionViewBridgeTests {
         #expect(events.started == ["first", "first"])
         let configurations = events.configurationCount
 
-        fixture.installDisplayVersion([CapturedSection(
+        fixture.installDisplayVersion([SectionSnapshot(
             id: "section",
             cells: [cell("same", token: "latest", events: events)]
         )])
@@ -302,7 +302,7 @@ struct CollectionViewBridgeTests {
             section: 0
         )) as? ActionCell)
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
-        fixture.installDisplayVersion([CapturedSection(
+        fixture.installDisplayVersion([SectionSnapshot(
             id: "section",
             cells: [AnyCellPresenter(ReplacementPresenter(id: "same", events: events))]
         )])
@@ -340,7 +340,7 @@ struct CollectionViewBridgeTests {
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
         #expect(events.started.contains("old-header"))
         let replacementEvents = Events()
-        fixture.installDisplayVersion([CapturedSection(
+        fixture.installDisplayVersion([SectionSnapshot(
             id: "replacement",
             supplementaryViews: [AnySupplementaryPresenter(Header(
                 id: "old-header",
@@ -396,7 +396,7 @@ struct CollectionViewBridgeTests {
             events: events,
             token: "latest"
         ))
-        fixture.installDisplayVersion([CapturedSection(id: "section", supplementaryViews: [latest])])
+        fixture.installDisplayVersion([SectionSnapshot(id: "section", supplementaryViews: [latest])])
         bridge.refreshVisibleBehaviors()
         view.action?()
 
@@ -449,11 +449,11 @@ struct CollectionViewBridgeTests {
             events: events,
             content: "changed",
             onConfigure: { cell in
-                fixture.installDisplayVersion([CapturedSection(id: "section", cells: [nested])])
+                fixture.installDisplayVersion([SectionSnapshot(id: "section", cells: [nested])])
                 bridge.collectionView(fixture.view, willDisplay: cell, forItemAt: path)
             }
         ))
-        fixture.installDisplayVersion([CapturedSection(id: "section", cells: [outer])])
+        fixture.installDisplayVersion([SectionSnapshot(id: "section", cells: [outer])])
         bridge.collectionView(fixture.view, willDisplay: view, forItemAt: path)
         bridge.collectionView(fixture.view, didEndDisplaying: view, forItemAt: path)
         bridge.collectionView(fixture.view, didEndDisplaying: view, forItemAt: path)
@@ -490,7 +490,7 @@ struct CollectionViewBridgeTests {
 
         let content = contentChanges ? "changed" : "original"
         let current = cell("prepared", token: "latest", events: events, content: content)
-        fixture.installDisplayVersion([CapturedSection(id: "section", cells: [current])])
+        fixture.installDisplayVersion([SectionSnapshot(id: "section", cells: [current])])
         bridge.refreshVisibleBehaviors()
         // Drive redisplay independently of dequeue, which UIKit permits for an
         // already prepared view. The visible-only refresh above cannot reach it.
@@ -505,7 +505,7 @@ struct CollectionViewBridgeTests {
         #expect(events.ended == ["first", "latest"])
 
         let redisplayed = cell("prepared", token: "redisplayed", events: events, content: content)
-        fixture.installDisplayVersion([CapturedSection(id: "section", cells: [redisplayed])])
+        fixture.installDisplayVersion([SectionSnapshot(id: "section", cells: [redisplayed])])
         bridge.refreshVisibleBehaviors()
         bridge.collectionView(view, willDisplay: prepared, forItemAt: path)
         prepared.action?()
@@ -558,7 +558,7 @@ struct CollectionViewBridgeTests {
             token: "latest",
             content: content
         ))
-        fixture.installDisplayVersion([CapturedSection(
+        fixture.installDisplayVersion([SectionSnapshot(
             id: "section",
             supplementaryViews: [current]
         )])
@@ -589,7 +589,7 @@ struct CollectionViewBridgeTests {
             token: "redisplayed",
             content: content
         ))
-        fixture.installDisplayVersion([CapturedSection(
+        fixture.installDisplayVersion([SectionSnapshot(
             id: "section",
             supplementaryViews: [redisplayed]
         )])
@@ -651,7 +651,7 @@ struct CollectionViewBridgeTests {
 
         // Even when a presenter subsequently occupies the path, a fallback cell
         // must never forward its selection or display events to that presenter.
-        fixture.installDisplayVersion([CapturedSection(
+        fixture.installDisplayVersion([SectionSnapshot(
             id: "section",
             cells: [cell("new", token: "new", events: events)]
         )])
@@ -765,7 +765,7 @@ private final class Fixture {
         window.isHidden = false
     }
 
-    func installDisplayVersion(_ sections: [CapturedSection]) {
+    func installDisplayVersion(_ sections: [SectionSnapshot]) {
         for section in sections {
             for presenter in section.cells {
                 owner.registry.prepare(presenter)
@@ -792,12 +792,12 @@ private final class Section: SectionPresenter {
         self.supplementaryViews = supplementaryViews
     }
 
-    func capturePresentation() -> DefaultSectionPresentation {
+    func captureContent() -> DefaultSectionContent {
         var kinds = supplementaryViews.map(\.elementKind)
         if requestsHeader && !kinds.contains(UICollectionView.elementKindSectionHeader) {
             kinds.append(UICollectionView.elementKindSectionHeader)
         }
-        return DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) { [kinds] in
+        return DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { [kinds] in
             testSectionLayout(kinds: kinds, environment: $0)
         }
     }

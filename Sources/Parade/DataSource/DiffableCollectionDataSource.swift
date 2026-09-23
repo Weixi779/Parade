@@ -9,8 +9,8 @@ public final class DiffableCollectionDataSource: CollectionDataSource {
     private let collectionView: UICollectionView
     private let cellProvider: CollectionCellProvider
     private let supplementaryProvider: CollectionSupplementaryProvider
-    private var current = CollectionComposition.empty
-    private var previous = CollectionComposition.empty
+    private var current = CollectionSnapshot.empty
+    private var previous = CollectionSnapshot.empty
     private var sectionIdentifiers = NativeIdentifiers()
     private var itemIdentifiers = NativeIdentifiers()
 
@@ -91,8 +91,8 @@ public final class DiffableCollectionDataSource: CollectionDataSource {
     }
 
     public func apply(
-        from source: CollectionComposition,
-        to target: CollectionComposition,
+        from source: CollectionSnapshot,
+        to target: CollectionSnapshot,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic] {

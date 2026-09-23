@@ -246,13 +246,13 @@ struct SectionUpdateTests {
     func stagedLayoutIdentity() throws {
         let a = Section("a", items: [1, 2])
         let b = Section("b", items: [3])
-        let oldA = CapturedSection(capturing: a)
-        let oldB = CapturedSection(capturing: b)
-        let source = try CollectionComposition([oldA, oldB])
+        let oldA = SectionSnapshot(capturing: a)
+        let oldB = SectionSnapshot(capturing: b)
+        let source = try CollectionSnapshot([oldA, oldB])
         a.height = 90
         a.items = [2]
         b.items = [3, 1]
-        let target = try CollectionComposition([CapturedSection(capturing: b), CapturedSection(capturing: a)])
+        let target = try CollectionSnapshot([SectionSnapshot(capturing: b), SectionSnapshot(capturing: a)])
         let plan = try CollectionUpdatePlan(from: source, to: target)
         for batch in plan.batches {
             for section in batch.sections {
@@ -261,6 +261,317 @@ struct SectionUpdateTests {
         }
         #expect(plan.content.hasLayoutUpdates)
     }
+
+    @Test("Membership and collection visibility have separate lifecycles", arguments: [false, true])
+    func lifecycle(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let a = Section("a", items: [1])
+        let b = Section("b", items: [2])
+        try await fixture.owner.setSections([a, b], animated: false)
+        #expect(a.events == [.attach])
+        fixture.owner.setVisible(true)
+        fixture.owner.setVisible(true)
+        let events = a.events
+        try await fixture.owner.setSections([b, a], animated: false)
+        try await a.update(animated: false)
+        #expect(a.events == events)
+        try await fixture.owner.setSections([b], animated: false)
+        #expect(a.events == events + [.visibility(false), .detach])
+        fixture.owner.setVisible(false)
+        #expect(a.events == events + [.visibility(false), .detach])
+        try await fixture.owner.setSections([a, b], animated: false)
+        #expect(a.events.suffix(1) == [.attach])
+        #expect(a.attachmentStates == [true, false, true])
+    }
+
+    @Test("Visibility changes reach current members while attachment is pending", arguments: [false, true])
+    func visibilityDuringAttachment(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let a = Section("a", items: [1])
+        let b = Section("b", items: [2])
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([a], animated: false)
+        #expect(a.events == [.attach, .visibility(true)])
+        let gate = Gate()
+        fixture.source.gate = gate
+        let attachment = Task { try await fixture.owner.setSections([a, b], animated: false) }
+        await gate.waitUntilStarted()
+        fixture.owner.setVisible(false)
+        #expect(a.events.last == .visibility(false))
+        #expect(b.events.isEmpty)
+        gate.release()
+        try await attachment.value
+        #expect(b.events == [.attach])
+    }
+
+    @Test("Rejected membership emits no lifecycle events; same-ID replacement does", arguments: [false, true])
+    func replacementLifecycle(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let old = Section("a", items: [1])
+        let replacement = Section("a", items: [2])
+        let invalid = Section("invalid", items: [2])
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([old], animated: false)
+        await #expect(throws: CollectionUpdateError.duplicateCellId("2")) {
+            try await fixture.owner.setSections([replacement, invalid], animated: false)
+        }
+        #expect(old.events == [.attach, .visibility(true)])
+        #expect(replacement.events.isEmpty)
+        #expect(invalid.events.isEmpty)
+        try await fixture.owner.setSections([replacement], animated: false)
+        #expect(old.events == [.attach, .visibility(true), .visibility(false), .detach])
+        #expect(replacement.events == [.attach, .visibility(true)])
+        #expect(old.attachmentStates == [true, false])
+    }
+
+    @Test("Reentrant visibility changes do not leave another member with stale state")
+    func reentrantVisibility() async throws {
+        let fixture = Fixture()
+        defer { fixture.close() }
+        let sections = [Section("a", items: [1]), Section("b", items: [2])]
+        try await fixture.owner.setSections(sections, animated: false)
+        for section in sections {
+            section.onVisibility = { [weak owner = fixture.owner] visible in
+                if visible { owner?.setVisible(false) }
+            }
+        }
+        fixture.owner.setVisible(true)
+        #expect(!fixture.owner.isVisible)
+        for section in sections {
+            #expect(section.events == [.attach] || section.events == [.attach, .visibility(true), .visibility(false)])
+        }
+    }
+
+    @Test("Attachment callbacks may enqueue updates and change collection visibility")
+    func updateFromAttachment() async throws {
+        let fixture = Fixture()
+        defer { fixture.close() }
+        let a = Section("a", items: [1])
+        let b = Section("b", items: [2])
+        var update: Task<Void, any Error>?
+        a.onAttach = { [weak owner = fixture.owner, weak a] in
+            owner?.setVisible(true)
+            #expect(a?.events == [.attach])
+            update = Task {
+                guard let a else { return }
+                a.items = [3]
+                try await a.update(animated: false)
+            }
+        }
+        try await fixture.owner.setSections([a, b], animated: false)
+        try await #require(update).value
+        #expect(a.events == [.attach, .visibility(true)])
+        #expect(b.events == [.attach, .visibility(true)])
+        #expect(fixture.owner.indexPath(for: 3) != nil)
+    }
+
+    @Test("Releasing an orchestrator ends retained sections' attachments", .timeLimit(.minutes(1)))
+    func ownerRelease() async throws {
+        let section = Section("a", items: [1])
+        let frame = CGRect(x: 0, y: 0, width: 320, height: 640)
+        let view = UICollectionView(frame: frame, collectionViewLayout: UICollectionViewLayout())
+        let window = UIWindow(frame: frame)
+        let controller = UIViewController()
+        controller.view = view
+        window.rootViewController = controller
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let detached = Signal()
+        section.onDetach = { detached.send() }
+        var owner: CollectionOrchestrator? = CollectionOrchestrator(collectionView: view)
+        weak var weakOwner = owner
+        owner?.setVisible(true)
+        try await owner?.setSections([section], animated: false)
+        #expect(section.sectionDisplayEvents == [true])
+        owner = nil
+        await detached.wait()
+        #expect(weakOwner == nil)
+        #expect(!section.updates.isAttached)
+        #expect(section.events == [.attach, .visibility(true), .visibility(false), .detach])
+        #expect(section.sectionDisplayEvents == [true, false])
+    }
+
+    @Test("Collection display reaches offscreen sections; section display follows scrolling", arguments: [false, true])
+    func twoDisplayLevels(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let top = Section("top", items: [1])
+        top.height = 2000
+        let bottom = Section("bottom", items: [2])
+        try await fixture.owner.setSections([top, bottom], animated: false)
+        #expect(top.sectionDisplayEvents.isEmpty)
+        fixture.owner.setVisible(true)
+        #expect(top.sectionDisplayEvents == [true])
+        #expect(bottom.events == [.attach, .visibility(true)])
+        #expect(bottom.sectionDisplayEvents.isEmpty)
+
+        fixture.view.contentOffset.y = 2000
+        fixture.view.layoutIfNeeded()
+        #expect(top.sectionDisplayEvents == [true, false])
+        #expect(bottom.sectionDisplayEvents == [true])
+        #expect(bottom.events == [.attach, .visibility(true)])
+        fixture.owner.setVisible(false)
+        fixture.owner.setVisible(false)
+        #expect(bottom.sectionDisplayEvents == [true, false])
+        fixture.owner.setVisible(true)
+        #expect(top.sectionDisplayEvents == [true, false])
+        #expect(bottom.sectionDisplayEvents == [true, false, true])
+    }
+
+    @Test("A section enters on its first cell and exits on its last cell", arguments: [false, true])
+    func firstAndLastCell(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let section = Section("a", items: [1, 2])
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([section], animated: false)
+        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        let firstPath = IndexPath(item: 0, section: 0)
+        let lastPath = IndexPath(item: 1, section: 0)
+        let first = try #require(fixture.view.cellForItem(at: firstPath))
+        let last = try #require(fixture.view.cellForItem(at: lastPath))
+        #expect(section.sectionDisplayEvents == [true])
+        bridge.collectionView(fixture.view, didEndDisplaying: first, forItemAt: firstPath)
+        #expect(section.sectionDisplayEvents == [true])
+        bridge.collectionView(fixture.view, didEndDisplaying: last, forItemAt: lastPath)
+        #expect(section.sectionDisplayEvents == [true, false])
+        fixture.owner.setVisible(false)
+        fixture.owner.setVisible(true)
+        #expect(section.sectionDisplayEvents == [true, false])
+        bridge.collectionView(fixture.view, willDisplay: first, forItemAt: firstPath)
+        bridge.collectionView(fixture.view, willDisplay: last, forItemAt: lastPath)
+        #expect(section.sectionDisplayEvents == [true, false, true])
+    }
+
+    @Test("Supplementary-only and mixed sections count supplementary display", arguments: [false, true], [false, true])
+    func supplementaryDisplay(native: Bool, hasCells: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let section = Section("a", items: hasCells ? [1] : [])
+        section.hasHeader = true
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([section], animated: false)
+        let path = IndexPath(item: 0, section: 0)
+        let kind = UICollectionView.elementKindSectionHeader
+        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        let header = try #require(fixture.view.supplementaryView(forElementKind: kind, at: path))
+        #expect(section.sectionDisplayEvents == [true])
+        if hasCells {
+            let cell = try #require(fixture.view.cellForItem(at: path))
+            bridge.collectionView(fixture.view, didEndDisplaying: cell, forItemAt: path)
+            #expect(section.sectionDisplayEvents == [true])
+        }
+        bridge.collectionView(fixture.view, didEndDisplayingSupplementaryView: header, forElementOfKind: kind, at: path)
+        #expect(section.sectionDisplayEvents == [true, false])
+        bridge.collectionView(fixture.view, willDisplaySupplementaryView: header, forElementKind: kind, at: path)
+        #expect(section.sectionDisplayEvents == [true, false, true])
+    }
+
+    @Test("Updates settle section display once, including a cell transfer", arguments: [false, true])
+    func displayAcrossUpdates(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let a = Section("a", items: [1])
+        let b = Section("b", items: [])
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([a, b], animated: false)
+        try await fixture.owner.setSections([b, a], animated: false)
+        a.height = 96
+        try await a.update(animated: false)
+        try await a.update(animated: false, mode: .reload)
+        #expect(a.sectionDisplayEvents == [true])
+        #expect(b.sectionDisplayEvents.isEmpty)
+        a.items = []
+        b.items = [1]
+        try await fixture.owner.update([a, b], animated: false)
+        #expect(a.sectionDisplayEvents == [true, false])
+        #expect(b.sectionDisplayEvents == [true])
+    }
+
+    @Test("Late view callbacks cannot end a new same-ID attachment", arguments: [false, true])
+    func replacementDisplay(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let old = Section("a", items: [1])
+        let replacement = Section("a", items: [2])
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([old], animated: false)
+        let path = IndexPath(item: 0, section: 0)
+        let cell = try #require(fixture.view.cellForItem(at: path))
+        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        // Keep an old display cycle pending while UIKit ends its own cycle.
+        bridge.collectionView(fixture.view, willDisplay: cell, forItemAt: path)
+        try await fixture.owner.setSections([replacement], animated: false)
+        #expect(old.displayOrder == ["attach", "collection.begin", "section.begin", "section.end", "collection.end", "detach"])
+        #expect(replacement.sectionDisplayEvents == [true])
+        bridge.collectionView(fixture.view, didEndDisplaying: cell, forItemAt: path)
+        #expect(replacement.sectionDisplayEvents == [true])
+        try await fixture.owner.setSections([], animated: false)
+        #expect(replacement.sectionDisplayEvents == [true, false])
+        try await fixture.owner.setSections([old], animated: false)
+        #expect(old.sectionDisplayEvents == [true, false, true])
+    }
+
+    @Test("Same-content replacement transfers display even when UIKit retains the cell", arguments: [false, true])
+    func replacementWithoutDequeue(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let old = Section("a", items: [1])
+        let replacement = Section("a", items: [1])
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([old], animated: false)
+        let path = IndexPath(item: 0, section: 0)
+        let cell = try #require(fixture.view.cellForItem(at: path))
+        try await fixture.owner.setSections([replacement], animated: false)
+        #expect(fixture.view.cellForItem(at: path) === cell)
+        #expect(old.sectionDisplayEvents == [true, false])
+        #expect(replacement.sectionDisplayEvents == [true])
+        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        bridge.collectionView(fixture.view, didEndDisplaying: cell, forItemAt: path)
+        #expect(replacement.sectionDisplayEvents == [true, false])
+    }
+
+    @Test("A collection can hide during a section update", arguments: [false, true])
+    func hideDuringUpdate(native: Bool) async throws {
+        let fixture = Fixture(native: native)
+        defer { fixture.close() }
+        let section = Section("a", items: [1])
+        fixture.owner.setVisible(true)
+        try await fixture.owner.setSections([section], animated: false)
+        let gate = Gate()
+        fixture.source.gate = gate
+        section.items = [2]
+        let update = Task { try await section.update(animated: false) }
+        await gate.waitUntilStarted()
+        fixture.owner.setVisible(false)
+        #expect(section.sectionDisplayEvents == [true, false])
+        gate.release()
+        try await update.value
+        #expect(section.sectionDisplayEvents == [true, false])
+        fixture.owner.setVisible(true)
+        #expect(section.sectionDisplayEvents == [true, false, true])
+    }
+
+    @Test("Reentrant section callbacks keep collection and section display balanced")
+    func reentrantSectionDisplay() async throws {
+        let fixture = Fixture()
+        defer { fixture.close() }
+        let section = Section("a", items: [1])
+        try await fixture.owner.setSections([section], animated: false)
+        section.onSectionDisplay = { [weak owner = fixture.owner, weak section] visible in
+            if visible {
+                owner?.setVisible(false)
+                #expect(section?.displayOrder.last == "section.begin")
+            }
+        }
+        fixture.owner.setVisible(true)
+        #expect(section.displayOrder == ["attach", "collection.begin", "section.begin", "section.end", "collection.end"])
+        #expect(!fixture.owner.isVisible)
+    }
+
 }
 
 private struct Cell: CellPresenter {
@@ -268,31 +579,98 @@ private struct Cell: CellPresenter {
     func configure(_ cell: UICollectionViewCell) { cell.accessibilityLabel = String(id) }
 }
 
-private struct Presentation: SectionPresentation {
+private struct Header: SupplementaryPresenter {
+    let id: String
+    var elementKind: String { UICollectionView.elementKindSectionHeader }
+    func configure(_ view: UICollectionReusableView) {}
+}
+
+private struct Content: SectionContent {
     let cells: [AnyCellPresenter]
     let height: CGFloat
+    var supplementaryViews: [AnySupplementaryPresenter] = []
 
     @MainActor
     func makeLayout(in environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
         let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height))
-        return NSCollectionLayoutSection(group: .vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)]))
+        let section = NSCollectionLayoutSection(group: .vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)]))
+        if !supplementaryViews.isEmpty {
+            section.boundarySupplementaryItems = [NSCollectionLayoutBoundarySupplementaryItem(
+                layoutSize: size, elementKind: UICollectionView.elementKindSectionHeader, alignment: .top
+            )]
+        }
+        return section
     }
 }
 
 @MainActor
-private final class Section: SectionPresenter {
+private final class Section: SectionPresenter, SectionAttachmentObserving, CollectionDisplayObserving, SectionDisplayObserving {
+    enum Event: Equatable {
+        case attach, visibility(Bool), detach
+    }
+
     let id: String
     let updates = SectionUpdateContext()
     var items: [Int]
     var height: CGFloat = 44
+    var hasHeader = false
+    var sectionDisplayEvents: [Bool] = []
+    var displayOrder: [String] = []
+    var onSectionDisplay: ((Bool) -> Void)?
     var onCapture: (() -> Void)?
+    var onAttach: (() -> Void)?
+    var onDetach: (() -> Void)?
+    var onVisibility: ((Bool) -> Void)?
+    var events: [Event] = []
+    var attachmentStates: [Bool] = []
 
     init(_ id: String, items: [Int]) { self.id = id; self.items = items }
 
-    func capturePresentation() -> Presentation {
-        let result = Presentation(cells: items.map { AnyCellPresenter(Cell(id: $0)) }, height: height)
+    func captureContent() -> Content {
+        let result = Content(
+            cells: items.map { AnyCellPresenter(Cell(id: $0)) }, height: height,
+            supplementaryViews: hasHeader ? [AnySupplementaryPresenter(Header(id: id))] : []
+        )
         onCapture?()
         return result
+    }
+
+    func didAttach() {
+        events.append(.attach)
+        displayOrder.append("attach")
+        attachmentStates.append(updates.isAttached)
+        onAttach?()
+    }
+
+    func didDetach() {
+        events.append(.detach)
+        displayOrder.append("detach")
+        attachmentStates.append(updates.isAttached)
+        onDetach?()
+    }
+
+    func sectionWillDisplay() {
+        sectionDisplayEvents.append(true)
+        displayOrder.append("section.begin")
+        onSectionDisplay?(true)
+    }
+
+    func sectionDidEndDisplaying() {
+        sectionDisplayEvents.append(false)
+        displayOrder.append("section.end")
+        onSectionDisplay?(false)
+    }
+
+    func collectionWillDisplay() {
+        events.append(.visibility(true))
+        displayOrder.append("collection.begin")
+        onVisibility?(true)
+    }
+
+    func collectionDidEndDisplaying() {
+        events.append(.visibility(false))
+        displayOrder.append("collection.end")
+        onVisibility?(false)
     }
 }
 
@@ -337,7 +715,7 @@ private final class ControlledSource: CollectionDataSource {
     func layoutSection(at index: Int, environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? {
         base.layoutSection(at: index, environment: environment)
     }
-    func apply(from source: CollectionComposition, to target: CollectionComposition, animated: Bool, mode: CollectionUpdateMode) async -> [CollectionDiagnostic] {
+    func apply(from source: CollectionSnapshot, to target: CollectionSnapshot, animated: Bool, mode: CollectionUpdateMode) async -> [CollectionDiagnostic] {
         if let gate { self.gate = nil; await gate.pause() }
         return await base.apply(from: source, to: target, animated: animated, mode: mode)
     }

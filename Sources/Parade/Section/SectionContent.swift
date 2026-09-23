@@ -2,9 +2,10 @@
 
 import UIKit
 
-/// One captured display version. Keep its contents and layout inputs immutable
-/// after submission; layout construction must not read the live section owner.
-public protocol SectionPresentation {
+/// The display content produced by a section: cells, supplementary views, and layout inputs.
+/// Keep this content stable after capture; layout construction must not read the live owner.
+/// Parade combines it with the section's identity to create a SectionSnapshot.
+public protocol SectionContent {
     var cells: [AnyCellPresenter] { get }
     var supplementaryViews: [AnySupplementaryPresenter] { get }
 
@@ -12,12 +13,12 @@ public protocol SectionPresentation {
     func makeLayout(in environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection
 }
 
-public extension SectionPresentation {
+public extension SectionContent {
     var supplementaryViews: [AnySupplementaryPresenter] { [] }
 }
 
-/// A convenience implementation. Custom presentation types can conform directly.
-public struct DefaultSectionPresentation: SectionPresentation {
+/// A convenience container for section content. Custom content types can conform directly.
+public struct DefaultSectionContent: SectionContent {
     public let cells: [AnyCellPresenter]
     public let supplementaryViews: [AnySupplementaryPresenter]
     private let layout: @MainActor (any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection
@@ -40,7 +41,7 @@ public struct DefaultSectionPresentation: SectionPresentation {
 
 /// Identity belongs to a captured layout version, including when structural
 /// stages replace its cells. Closures are deliberately not compared for equality.
-final class CapturedCompositionalLayout {
+final class SectionLayoutSnapshot {
     let makeLayout: @MainActor (any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection
 
     init(makeLayout: @escaping @MainActor (any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection) {
@@ -48,7 +49,7 @@ final class CapturedCompositionalLayout {
     }
 
     @MainActor
-    init<P: SectionPresentation>(_ presentation: P) {
-        makeLayout = { presentation.makeLayout(in: $0) }
+    init<C: SectionContent>(_ content: C) {
+        makeLayout = { content.makeLayout(in: $0) }
     }
 }

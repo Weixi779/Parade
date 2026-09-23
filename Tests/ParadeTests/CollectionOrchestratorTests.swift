@@ -540,15 +540,15 @@ private final class TestSection: SectionPresenter {
         self.supplementaryViews = supplementaryViews
     }
 
-    func capturePresentation() -> DefaultSectionPresentation {
-        testPresentation(cells: cells, supplementaryViews: supplementaryViews)
+    func captureContent() -> DefaultSectionContent {
+        testSectionContent(cells: cells, supplementaryViews: supplementaryViews)
     }
 }
 
 @MainActor
 private final class MutableSection: SectionPresenter {
     let updates = SectionUpdateContext()
-    func capturePresentation() -> DefaultSectionPresentation { testPresentation(cells: cells) }
+    func captureContent() -> DefaultSectionContent { testSectionContent(cells: cells) }
     let id: String
     var cells: [AnyCellPresenter]
     init(id: String, cells: [AnyCellPresenter]) {

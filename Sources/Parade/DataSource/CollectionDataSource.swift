@@ -50,8 +50,8 @@ public protocol CollectionDataSource: AnyObject {
     /// Parade then refreshes behavior bindings and delivers public completion.
     /// Cancellation of the submitting task does not undo an accepted update.
     func apply(
-        from source: CollectionComposition,
-        to target: CollectionComposition,
+        from source: CollectionSnapshot,
+        to target: CollectionSnapshot,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic]

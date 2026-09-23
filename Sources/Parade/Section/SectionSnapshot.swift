@@ -4,13 +4,14 @@
 
 import UIKit
 
-/// A captured composition. Reading a mutable section again during an update would
-/// let application state change UIKit's counts in the middle of a batch.
-public struct CapturedSection: DiffableSection {
+/// One section's captured display version, including its identity and content.
+/// Queued updates and data sources use snapshots instead of rereading a mutable presenter.
+/// Structural batches can derive intermediate snapshots while retaining layout identity.
+public struct SectionSnapshot: DiffableSection {
     public let id: AnyHashable
     public let cells: [AnyCellPresenter]
     public let supplementaryViews: [AnySupplementaryPresenter]
-    let layout: CapturedCompositionalLayout
+    let layout: SectionLayoutSnapshot
 
     /// Resolves the layout of this captured version, including intermediate stages.
     @MainActor
@@ -39,11 +40,11 @@ public struct CapturedSection: DiffableSection {
 
     @MainActor
     init<S: SectionPresenter>(capturing section: S) {
-        let presentation = section.capturePresentation()
+        let content = section.captureContent()
         id = AnyHashable(section.id)
-        cells = presentation.cells
-        supplementaryViews = presentation.supplementaryViews
-        layout = CapturedCompositionalLayout(presentation)
+        cells = content.cells
+        supplementaryViews = content.supplementaryViews
+        layout = SectionLayoutSnapshot(content)
     }
 
     public init(
@@ -55,12 +56,12 @@ public struct CapturedSection: DiffableSection {
         self.id = id
         self.cells = cells
         self.supplementaryViews = supplementaryViews
-        self.layout = CapturedCompositionalLayout(makeLayout: layout)
+        self.layout = SectionLayoutSnapshot(makeLayout: layout)
     }
 
     private init(
         id: AnyHashable, cells: [AnyCellPresenter],
-        supplementaryViews: [AnySupplementaryPresenter], layout: CapturedCompositionalLayout
+        supplementaryViews: [AnySupplementaryPresenter], layout: SectionLayoutSnapshot
     ) {
         self.id = id
         self.cells = cells

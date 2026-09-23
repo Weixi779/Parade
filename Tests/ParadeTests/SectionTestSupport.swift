@@ -3,7 +3,7 @@
 import UIKit
 @testable import Parade
 
-extension CapturedSection {
+extension SectionSnapshot {
     init(id: AnyHashable, cells: [AnyCellPresenter] = [], supplementaryViews: [AnySupplementaryPresenter] = []) {
         let kinds = supplementaryViews.map(\.elementKind)
         self.init(id: id, cells: cells, supplementaryViews: supplementaryViews, layout: {
@@ -32,10 +32,10 @@ func testSectionLayout(
 }
 
 @MainActor
-func testPresentation(
+func testSectionContent(
     cells: [AnyCellPresenter], supplementaryViews: [AnySupplementaryPresenter] = []
-) -> DefaultSectionPresentation {
-    DefaultSectionPresentation(cells: cells, supplementaryViews: supplementaryViews) {
+) -> DefaultSectionContent {
+    DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) {
         testSectionLayout(kinds: supplementaryViews.map(\.elementKind), environment: $0)
     }
 }

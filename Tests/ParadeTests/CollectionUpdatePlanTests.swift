@@ -129,17 +129,17 @@ struct CollectionUpdatePlanTests {
     }
 
     private func composition(
-        _ sections: [CapturedSection]
-    ) throws(CollectionComposition.ValidationFailure) -> CollectionComposition {
-        try CollectionComposition(sections)
+        _ sections: [SectionSnapshot]
+    ) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot {
+        try CollectionSnapshot(sections)
     }
 
     private func section(
         _ id: String,
         _ cells: [AnyCellPresenter],
         header: AnySupplementaryPresenter? = nil
-    ) -> CapturedSection {
-        CapturedSection(
+    ) -> SectionSnapshot {
+        SectionSnapshot(
             id: AnyHashable(id),
             cells: cells,
             supplementaryViews: header.map { [$0] } ?? []
@@ -167,8 +167,8 @@ private actor PlanningContext {
     ) {
         let old = AnyCellPresenter(ValueCell(id: 1, title: "old"))
         let same = AnyCellPresenter(ValueCell(id: 1, title: "old"))
-        let source = try CollectionComposition([CapturedSection(id: "section", cells: [old])])
-        let target = try CollectionComposition([CapturedSection(id: "section", cells: [
+        let source = try CollectionSnapshot([SectionSnapshot(id: "section", cells: [old])])
+        let target = try CollectionSnapshot([SectionSnapshot(id: "section", cells: [
             AnyCellPresenter(ValueCell(id: 2, title: "inserted")),
             AnyCellPresenter(ValueCell(id: 1, title: "updated"))
         ])])

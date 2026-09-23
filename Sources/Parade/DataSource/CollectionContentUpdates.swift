@@ -15,8 +15,8 @@ struct CollectionContentUpdates {
     }
 
     init(
-        from source: CollectionComposition,
-        to target: CollectionComposition,
+        from source: CollectionSnapshot,
+        to target: CollectionSnapshot,
         updatedSections: IndexSet? = nil,
         updatedItems: Set<ItemLocation>? = nil
     ) {

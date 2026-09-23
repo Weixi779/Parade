@@ -4,29 +4,29 @@ import Testing
 import UIKit
 @testable import Parade
 
-struct CollectionCompositionTests {
+struct CollectionSnapshotTests {
     @Test("Captured lookup values preserve section order and their original presenters")
     func lookupValues() throws {
         let sections = [section("b", cells: [2]), section("a", cells: [1, 3])]
-        let composition = try CollectionComposition(sections)
+        let snapshot = try CollectionSnapshot(sections)
 
-        #expect(composition.sections.map(\.id) == [AnyHashable("b"), AnyHashable("a")])
-        #expect(composition.sectionsById["a"]?.cells == sections[1].cells)
-        #expect(composition.cellsById[3] == sections[1].cells[1])
-        #expect(composition.sectionsById.count == 2)
-        #expect(composition.cellsById.count == 3)
-        let empty = try CollectionComposition([])
+        #expect(snapshot.sections.map(\.id) == [AnyHashable("b"), AnyHashable("a")])
+        #expect(snapshot.sectionsById["a"]?.cells == sections[1].cells)
+        #expect(snapshot.cellsById[3] == sections[1].cells[1])
+        #expect(snapshot.sectionsById.count == 2)
+        #expect(snapshot.cellsById.count == 3)
+        let empty = try CollectionSnapshot([])
         #expect(empty.sections.isEmpty && empty.sectionsById.isEmpty && empty.cellsById.isEmpty)
     }
 
     @Test("Supplementary identities are scoped to section and kind")
     @MainActor
     func supplementaryScopes() throws {
-        let composition = try CollectionComposition([
+        let snapshot = try CollectionSnapshot([
             section("a", views: [view("shared", kind: "header"), view("shared", kind: "footer")]),
             section("b", views: [view("shared", kind: "header")])
         ])
-        #expect(composition.sections.map { $0.supplementaryViews.count } == [2, 1])
+        #expect(snapshot.sections.map { $0.supplementaryViews.count } == [2, 1])
     }
 
     enum InvalidInput: CaseIterable, Sendable {
@@ -43,7 +43,7 @@ struct CollectionCompositionTests {
     func rejection(input: InvalidInput) {
         let (sections, expected, locations) = invalidInput(input)
         do {
-            _ = try CollectionComposition(sections)
+            _ = try CollectionSnapshot(sections)
             Issue.record("Expected invalid input rejection")
         } catch {
             #expect(error.error == expected)
@@ -55,7 +55,7 @@ struct CollectionCompositionTests {
 
     @MainActor
     private func invalidInput(_ input: InvalidInput) -> (
-        [CapturedSection], CollectionUpdateError, [CollectionDiagnostic.Location]
+        [SectionSnapshot], CollectionUpdateError, [CollectionDiagnostic.Location]
     ) {
         switch input {
         case .duplicateSection:
@@ -126,8 +126,8 @@ struct CollectionCompositionTests {
         _ id: String,
         cells: [Int] = [],
         views: [AnySupplementaryPresenter] = []
-    ) -> CapturedSection {
-        CapturedSection(
+    ) -> SectionSnapshot {
+        SectionSnapshot(
             id: AnyHashable(id),
             cells: cells.map { AnyCellPresenter(IndexedCell(id: $0)) },
             supplementaryViews: views

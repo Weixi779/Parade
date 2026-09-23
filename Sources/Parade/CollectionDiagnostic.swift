@@ -16,7 +16,7 @@ public struct CollectionDiagnostic: Equatable, Sendable {
         case displayedEmptyView
     }
 
-    /// Positions in the submitted composition. A nil item identifies a section.
+    /// Positions in the submitted snapshot. A nil item identifies a section.
     public struct Location: Equatable, Sendable {
         public let section: Int
         public let item: Int?

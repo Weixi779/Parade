@@ -113,7 +113,7 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
     let cell: CollectionCellProvider
     let supplementary: CollectionSupplementaryProvider
     let probe: SourceProbe
-    var content = CollectionComposition.empty
+    var content = CollectionSnapshot.empty
 
     init(
         view: UICollectionView,
@@ -157,8 +157,8 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
     }
 
     func apply(
-        from source: CollectionComposition,
-        to target: CollectionComposition,
+        from source: CollectionSnapshot,
+        to target: CollectionSnapshot,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic] {
@@ -208,7 +208,7 @@ private final class PublicID: Hashable {
 @MainActor
 private final class PublicSection: SectionPresenter {
     let updates = SectionUpdateContext()
-    func capturePresentation() -> DefaultSectionPresentation { testPresentation(cells: cells) }
+    func captureContent() -> DefaultSectionContent { testSectionContent(cells: cells) }
     let id: String
     let cells: [AnyCellPresenter]
     @MainActor
