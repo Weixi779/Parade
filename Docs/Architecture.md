@@ -68,9 +68,9 @@ type. The application retains the store, supplies business mappings, and seriali
 reconciliations. The store keeps the instances and type associations, not old input
 values or definition closures. Removed instances are not cached for reinsertion.
 
-The async reconciliation callback submits changed membership through the orchestrator;
-the store accepts the new order only after that callback succeeds. The returned change
-also identifies survivors for a subsequent content submission. Failure preserves
+The async reconciliation callback runs for every valid input, including content-only
+changes and empty lists. It can submit `compose(change.controllers).updating(change.retained).apply()`;
+the store accepts the new order only after that callback succeeds. Failure preserves
 membership, but does not undo already-staged business input. This layer does not
 replace the orchestrator's attachment state, completed baseline, or operation queue.
 The synchronous overload accepts immediately for applications managing submission
@@ -79,9 +79,11 @@ separately. Direct controller ownership remains supported without a store.
 Sections are classes conforming to a protocol; no framework base class is required.
 An App Store section can transform one business model into two, four, or any number
 of cells. A chat section can hold heterogeneous text, image, and notice presenters.
-The same two layers support both cases. Applications establish membership with `setSections`. Sections capture and submit
-local changes with `update()`. `orchestrator.update([first, second])` captures several
-sections atomically. Data-source implementations receive a full captured
+The same two layers support both cases. Applications establish membership with
+`compose(sections).apply()`. Sections capture and submit local changes with `update()`.
+`orchestrator.update([first, second]).apply()` captures several sections atomically;
+`compose(sections).updating(selected).apply()` combines membership and selected content.
+Data-source implementations receive a full captured
 `CollectionSnapshot` built against the latest completed baseline.
 
 `AnyCellPresenter` and `AnySupplementaryPresenter` erase at the heterogeneous array
@@ -185,9 +187,13 @@ use domain Id wrappers when otherwise-equal values represent different identitie
 ```mermaid
 sequenceDiagram
     participant App
+    participant Update as CollectionUpdate
     participant Orchestrator
     participant Source as Selected DataSource
-    App->>Orchestrator: setSections / section.update / update multiple sections
+    App->>Orchestrator: compose(sections) / update(sections)
+    Orchestrator-->>App: Description, no capture or submission
+    App->>Update: Optional updating(sections), then apply()
+    Update->>Orchestrator: Submit composition and selected content
     Note over Orchestrator: Capture inputs, validate locally, enqueue
     Note over Orchestrator: Resolve against latest baseline, validate globally, prepare registrations
     Orchestrator->>Source: await apply(last completed, target)
@@ -327,10 +333,11 @@ stateDiagram-v2
     Completed --> Idle: queue empty
 ```
 
-Accepted submissions are FIFO. `setSections` captures every supplied module at submission
-for possible attachment; execution decides which captures are needed. `update` captures
-the selected modules' presentation outputs. Existing modules
-in a membership/reorder operation retain their latest completed content. Later live
+Accepted submissions are FIFO. Descriptions are inert until `apply`: compositions
+capture every supplied module for possible attachment; content-only updates capture
+selected modules. Execution decides which composition captures are needed. Unselected
+survivors retain their latest completed content; selected sections use captured content.
+Repeated selections capture each instance once. Later live
 state changes cannot change a captured version's arrays or UIKit counts. Presenter
 values and layout business inputs must remain immutable after submission; the
 framework cannot deep-copy arbitrary reference models captured inside user code.
@@ -372,8 +379,8 @@ stage. The installed compositional provider asks the selected data source for
 layout. The page does not route layouts through its own latest module array.
 `supplementaryPresenter(ofKind:at:)` likewise queries the stage's current presenter.
 `appliedRevision` increments and `onDidApply` fires only after the entire submission.
-Enqueuing from callbacks is supported. Cancelling a task awaiting `setSections` or
-`update` leaves the accepted operation in the queue and does not cancel or roll back
+Enqueuing from callbacks is supported. Cancelling a task awaiting `apply()` or a section's
+`update()` leaves the accepted operation in the queue and does not cancel or roll back
 a UIKit transaction.
 
 ## Error recovery
@@ -389,13 +396,14 @@ check identities, coordinates, conflicts, intermediate counts and final structur
 Each batch already contains its intermediate presenter composition. A failed plan
 reloads the independently validated target before any batch has started.
 Only after execution completes does the queue update its baseline, advance the
-revision, emit `onDidApply`, and complete successfully. `setSections` validates member
-IDs and distinct update contexts at submission. Content validation waits until execution
-resolves membership and selects accepted versions or attachment captures; an unused
-capture cannot reject a reorder even while initial attachment is pending. Content errors
-therefore settle in FIFO order. Local `update` operations always use their captures, so
-they validate those outputs before enqueueing. Every complete target is validated before
-UIKit changes. Neither validation failure commits a target.
+revision, emit `onDidApply`, and complete successfully. Applying a composition validates
+member IDs, distinct update contexts and selection membership. Selected content is locally
+validated before enqueueing. Conditional attachment captures wait until execution resolves
+membership and selects accepted versions or captures; an unused capture cannot reject a
+reorder even while initial attachment is pending. Those errors settle in FIFO order.
+Every complete target is validated before UIKit changes. A combined update does not
+validate or apply an intermediate membership-only target. Neither validation failure
+commits a target or reserves new contexts.
 
 `CollectionDiagnostic` carries a reason, recovery action and, for invalid input,
 the relevant positions. `onDiagnostic` and the diagnostic logger run after active
@@ -467,13 +475,14 @@ changes remain immediate. Detachment ends section display, then collection displ
 before `didDetach()`. Orchestrator destruction defers this cleanup to a MainActor task.
 See the [lifecycle contract](ImplementationContract.md#attachment-and-display).
 
-| Operation | Inputs captured on submission | Effect on the execution-time baseline |
+| Operation | Inputs captured at apply | Effect on the execution-time baseline |
 | --- | --- | --- |
-| `setSections` | Member identities/order and output for any instance that needs attachment at execution | Preserve surviving instances' accepted content; add/remove/reorder members |
+| `compose(sections).apply()` | Member identities/order and output for any instance that needs attachment at execution | Preserve surviving instances' accepted content; add/remove/reorder members |
+| `compose(sections).updating(selected).apply()` | Target membership plus content for selected sections and possible attachments | Apply membership and selected content together as one validated target |
 | `section.update()` | One module's display output and attachment identity | Replace that module's content and layout |
-| `orchestrator.update(_:)` | Several modules' outputs and attachment identities | Replace them together, supporting cross-section cell transfers |
+| `orchestrator.update(sections).apply()` | Several modules' outputs and attachment identities | Replace them together, supporting cross-section cell transfers |
 
-Membership changes preserve accepted versions of sections still attached at execution.
+Membership changes preserve accepted versions of unselected sections still attached at execution.
 Each supplied instance is also captured at submission: if an earlier queued operation
 removes it, reattachment uses that capture. An unused capture cannot reject or overwrite
 a surviving instance's accepted content. Each operation builds and globally validates a
@@ -484,6 +493,12 @@ An unbounded `AsyncStream` carries complete submissions. One MainActor consumer 
 execution of each submission before reading the next. MainActor alone would not provide
 this guarantee across suspension. Cancellation of a caller does not retract an accepted
 operation. Stream enqueue failure is an explicit error; accepted operations are not coalesced.
+
+`CollectionUpdate` is a value description retaining the collection and section instances.
+Copying or chaining it has no capture or queue side effects. Selections accumulate by
+instance identity; selections outside a composition are invalid, even if an instance has
+the same business ID as a target section. Descriptions can be reapplied, capturing fresh
+content each time. Section-owned `update()` enters the same submission boundary directly.
 
 ## Captured layout stages
 

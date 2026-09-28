@@ -7,13 +7,13 @@ import UIKit
 @MainActor
 @Suite("SectionStore presentation integration", .timeLimit(.minutes(1)))
 struct SectionStoreIntegrationTests {
-    @Test("Reconciliation stages content until the caller submits retained sections", arguments: CollectionBackend.allCases)
+    @Test("Content-only reconciliation submits once and preserves visible cells and local state", arguments: CollectionBackend.allCases)
     func contentSubmission(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)
         defer { fixture.close() }
         let store = SectionStore()
         try await store.reconcile([definition("a", items: [1], title: "old")]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
         let section = try #require(store.controllers.first as? Section<Regular>)
         let path = IndexPath(item: 0, section: 0)
@@ -21,18 +21,18 @@ struct SectionStoreIntegrationTests {
         section.isExpanded = true
         let captures = section.captures
 
-        let change = try await store.reconcile([definition("a", items: [1], title: "new", height: 80)]) { _ in
-            Issue.record("Content-only reconciliation must not resubmit membership")
+        try await store.reconcile([definition("a", items: [1], title: "new", height: 80)]) { change in
+            #expect(!change.hasStructuralChanges)
+            #expect(section.input.title == "new")
+            #expect(section.captures == captures)
+            #expect(fixture.owner.appliedRevision == 1)
+            #expect(cell.accessibilityLabel == "old:1")
+            #expect(cell.frame.height == 44)
+            try await fixture.owner.compose(change.controllers).updating(change.retained).apply(animated: false)
         }
         #expect(store.controllers.first === section)
         #expect(section.isExpanded)
-        #expect(section.input.title == "new")
-        #expect(section.captures == captures)
-        #expect(fixture.owner.appliedRevision == 1)
-        #expect(cell.accessibilityLabel == "old:1")
-        #expect(cell.frame.height == 44)
-
-        try await fixture.owner.update(change.retained, animated: false)
+        #expect(section.captures == captures + 1)
         #expect(fixture.view.cellForItem(at: path) === cell)
         #expect(cell.accessibilityLabel == "new:1")
         #expect(cell.frame.height == 80)
@@ -49,7 +49,7 @@ struct SectionStoreIntegrationTests {
         try await store.reconcile([
             definition("a", items: [1]), definition("b", items: [2]), definition("c", items: [3]),
         ]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
         let a = try #require(store.controllers.first as? Section<Regular>)
         let b = try #require(store.controllers[1] as? Section<Regular>)
@@ -60,10 +60,10 @@ struct SectionStoreIntegrationTests {
             definition("c", items: [3]), definition("new", items: [4]), definition("a", items: [1]),
         ]) { change in
             #expect(store.ids == [AnyHashable("a"), AnyHashable("b"), AnyHashable("c")])
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).updating(change.retained).apply(animated: false)
         }
-        try await fixture.owner.update(change.retained, animated: false)
 
+        #expect(fixture.owner.appliedRevision == 2)
         #expect(store.controllers.first === c)
         #expect(store.controllers.last === a)
         #expect(a.isExpanded)
@@ -89,7 +89,7 @@ struct SectionStoreIntegrationTests {
         defer { fixture.close() }
         let store = SectionStore()
         try await store.reconcile([definition("a", items: [1])]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
         let previous = try #require(store.controllers.first as? Section<Regular>)
 
@@ -98,7 +98,7 @@ struct SectionStoreIntegrationTests {
                 Section<Featured>("a", input: $0)
             }, update: { $0.input = $1 }),
         ]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
         let replacement = try #require(store.controllers.first as? Section<Featured>)
 
@@ -119,7 +119,7 @@ struct SectionStoreIntegrationTests {
         defer { fixture.close() }
         let store = SectionStore()
         try await store.reconcile([definition("a", items: [1])]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
         let a = try #require(store.controllers.first as? Section<Regular>)
         weak var rejected: AnyObject?
@@ -130,7 +130,7 @@ struct SectionStoreIntegrationTests {
             ]) { change in
                 rejected = change.controllers.last
                 // A survivor still displays its accepted [1], so inserting another [1] is invalid.
-                try await fixture.owner.setSections(change.controllers, animated: false)
+                try await fixture.owner.compose(change.controllers).apply(animated: false)
             }
         }
         #expect(rejected == nil)
@@ -143,18 +143,17 @@ struct SectionStoreIntegrationTests {
         #expect(fixture.owner.appliedRevision == 1)
         #expect(fixture.view.cellForItem(at: IndexPath(item: 0, section: 0))?.accessibilityLabel == "value:1")
 
-        let retry = try await store.reconcile([
+        try await store.reconcile([
             definition("a", items: [4]), definition("b", items: [2]),
         ]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).updating(change.retained).apply(animated: false)
         }
-        try await fixture.owner.update(retry.retained, animated: false)
         #expect(store.controllers.first === a)
         #expect(fixture.owner.sectionIds == [AnyHashable("a"), AnyHashable("b")])
         #expect(fixture.owner.indexPath(for: 1) == nil)
         #expect(fixture.owner.indexPath(for: 4) == IndexPath(item: 0, section: 0))
         #expect(fixture.owner.indexPath(for: 2) == IndexPath(item: 0, section: 1))
-        #expect(fixture.owner.appliedRevision == 3)
+        #expect(fixture.owner.appliedRevision == 2)
     }
 
     @Test("Invalid retained content leaves UIKit unchanged and a later input recovers", arguments: CollectionBackend.allCases)
@@ -163,23 +162,22 @@ struct SectionStoreIntegrationTests {
         defer { fixture.close() }
         let store = SectionStore()
         try await store.reconcile([definition("a", items: [1])]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
         let a = try #require(store.controllers.first)
-        let invalid = try await store.reconcile([definition("a", items: [1, 1])]) { _ in
-            Issue.record("Content validation belongs to presentation submission")
-        }
         await #expect(throws: CollectionUpdateError.duplicateCellId("1")) {
-            try await fixture.owner.update(invalid.retained, animated: false)
+            try await store.reconcile([definition("a", items: [1, 1])]) { change in
+                try await fixture.owner.compose(change.controllers).updating(change.retained).apply(animated: false)
+            }
         }
         #expect(store.controllers.first === a)
         #expect(fixture.owner.numberOfItems == 1)
         #expect(fixture.owner.appliedRevision == 1)
 
-        let retry = try await store.reconcile([definition("a", items: [2, 3])]) { _ in
-            Issue.record("Recovery must not reconstruct membership")
+        try await store.reconcile([definition("a", items: [2, 3])]) { change in
+            #expect(!change.hasStructuralChanges)
+            try await fixture.owner.compose(change.controllers).updating(change.retained).apply(animated: false)
         }
-        try await fixture.owner.update(retry.retained, animated: false)
         #expect(store.controllers.first === a)
         #expect(fixture.owner.numberOfItems == 2)
         #expect(fixture.owner.indexPath(for: 1) == nil)
@@ -195,12 +193,14 @@ struct SectionStoreIntegrationTests {
         try await store.reconcile([
             definition("a", items: [1, 2]), definition("b", items: [3]),
         ]) { change in
-            try await fixture.owner.setSections(change.controllers, animated: false)
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
-        let change = try await store.reconcile([
+        try await store.reconcile([
             definition("a", items: [2]), definition("b", items: [3, 1], title: "moved"),
-        ]) { _ in Issue.record("A cell transfer does not change section membership") }
-        try await fixture.owner.update(change.retained, animated: false)
+        ]) { change in
+            #expect(!change.hasStructuralChanges)
+            try await fixture.owner.compose(change.controllers).updating(change.retained).apply(animated: false)
+        }
 
         #expect(fixture.owner.appliedRevision == 2)
         #expect(fixture.owner.numberOfItems == 3)

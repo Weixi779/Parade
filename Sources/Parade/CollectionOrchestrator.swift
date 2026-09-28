@@ -146,106 +146,17 @@ public final class CollectionOrchestrator {
         }
     }
 
-    /// Changes membership and order. Surviving instances retain their latest
-    /// accepted content; instances absent at execution use this call's capture.
-    /// Await attachment before calling a newly added section's update().
-    public func setSections(
-        _ sections: [any SectionController],
-        animated: Bool = true,
-        mode: CollectionUpdateMode = .diff,
-        completion: @escaping @MainActor (Result<Void, CollectionUpdateError>) -> Void = { _ in }
-    ) {
-        let incoming = sections.map { Member($0) }
-        // An earlier queued operation can remove a currently attached instance.
-        // Keep a fresh capture for reattachment, even if it appears to survive now.
-        let captured = incoming.map { $0.captureSnapshot() }
-        // Membership constraints are unconditional. Captured content is only a
-        // fallback: earlier operations may attach or remove any incoming instance.
-        // Validate content after execution selects the version it will actually use.
-        var ids: [AnyHashable: Int] = [:]
-        var contexts = Set<ObjectIdentifier>()
-        for (index, member) in incoming.enumerated() {
-            if let first = ids.updateValue(index, forKey: member.id) {
-                reject(.init(
-                    .duplicateSectionId(String(describing: member.id)),
-                    locations: [.init(section: first), .init(section: index)]
-                ), completion: completion)
-                return
-            }
-            guard contexts.insert(ObjectIdentifier(member.context)).inserted else {
-                reject(failure(.sectionAlreadyAttached), completion: completion)
-                return
-            }
-        }
-        var accepted: [ObjectIdentifier: Member] = [:]
-        submit(Submission(makeTarget: { baseline throws(CollectionSnapshot.ValidationFailure) in
-            var next: [ObjectIdentifier: Member] = [:]
-            var contents: [SectionSnapshot] = []
-            for (index, candidate) in incoming.enumerated() {
-                if let current = self.members[candidate.identity] {
-                    guard current.id == candidate.id, let content = baseline.sectionsById[current.id] else {
-                        throw self.failure(.staleSectionInstance(String(describing: candidate.id)))
-                    }
-                    next[current.identity] = current
-                    contents.append(content)
-                } else {
-                    guard candidate.context.owner == nil else { throw self.failure(.sectionAlreadyAttached) }
-                    next[candidate.identity] = candidate
-                    contents.append(captured[index])
-                }
-            }
-            let target = try CollectionSnapshot(contents)
-            // Reserve new contexts before UIKit suspends, so another collection
-            // cannot attach the same module while this operation is in flight.
-            for member in next.values where self.members[member.identity] == nil {
-                member.context.owner = member
-            }
-            accepted = next
-            self.displayMembers = Dictionary(uniqueKeysWithValues: next.values.map { ($0.id, $0) })
-            return target
-        }, animated: animated, mode: mode, didApply: { [self] in
-            let removed = self.members.values.filter { accepted[$0.identity] !== $0 }
-            let added = incoming.compactMap { candidate -> Member? in
-                guard self.members[candidate.identity] == nil else { return nil }
-                return accepted[candidate.identity]
-            }
-            self.members = accepted
-            for member in accepted.values {
-                member.context.submit = { [weak self, weak member] animated, mode in
-                    guard let self, let member else { throw CollectionUpdateError.sectionNotAttached }
-                    try await self.updateMembers([member], animated: animated, mode: mode)
-                }
-            }
-            for member in removed { member.detach() }
-            for member in added { member.attach() }
-            for member in added { member.setVisible(isVisible) }
-        }, completion: completion))
+    /// Describes the complete target membership and order without submitting it.
+    /// New instances use content captured at apply; survivors keep their latest accepted
+    /// content unless selected with updating(_:). Call apply() to perform the change.
+    public func compose(_ sections: [any SectionController]) -> CollectionUpdate {
+        CollectionUpdate(owner: self, composition: sections)
     }
 
-    public func setSections(
-        _ sections: [any SectionController],
-        animated: Bool = true,
-        mode: CollectionUpdateMode = .diff
-    ) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            setSections(sections, animated: animated, mode: mode) { continuation.resume(with: $0) }
-        }
-    }
-
-    /// Atomically updates one or more attached modules. Use one operation for a
-    /// cell transfer between sections, or any coordinated multi-section change.
-    public func update(
-        _ sections: [any SectionController],
-        animated: Bool = true,
-        mode: CollectionUpdateMode = .diff
-    ) async throws {
-        let selected = try sections.map { section in
-            guard let member = members[ObjectIdentifier(section)] else {
-                throw CollectionUpdateError.sectionNotAttached
-            }
-            return member
-        }
-        try await updateMembers(selected, animated: animated, mode: mode)
+    /// Describes a content update for attached sections without changing their order.
+    /// Attachment is checked at apply, not while constructing the description.
+    public func update(_ sections: [any SectionController]) -> CollectionUpdate {
+        CollectionUpdate(owner: self).updating(sections)
     }
 
     public func sectionId(at index: Int) -> AnyHashable? {
@@ -306,19 +217,131 @@ public final class CollectionOrchestrator {
         }
     }
 
-    /// Local and structural operations build against the last completed version.
-    /// Their closures retain captured inputs, never recapture live presentation.
-    func enqueue(
+    /// Both public apply forms and section-owned updates enter this capture boundary.
+    func apply(
+        composition: [any SectionController]?,
+        updating sections: [any SectionController],
         animated: Bool,
         mode: CollectionUpdateMode,
-        makeTarget: @escaping @MainActor (CollectionSnapshot) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot,
-        didApply: @escaping @MainActor () -> Void = {}
-    ) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            submit(Submission(makeTarget: makeTarget, animated: animated, mode: mode, didApply: didApply) { result in
-                continuation.resume(with: result)
-            })
+        completion: @escaping @MainActor (Result<Void, CollectionUpdateError>) -> Void
+    ) {
+        let incoming = composition?.map { Member($0) }
+        let selected: [Member]
+        do {
+            if let incoming {
+                try validateMembership(incoming)
+                let candidates = Dictionary(uniqueKeysWithValues: incoming.map { ($0.identity, $0) })
+                selected = try sections.map { section throws(CollectionSnapshot.ValidationFailure) in
+                    guard let member = candidates[ObjectIdentifier(section)] else {
+                        throw failure(.sectionNotInComposition(String(describing: section.id)))
+                    }
+                    return member
+                }
+            } else {
+                selected = try sections.map { section throws(CollectionSnapshot.ValidationFailure) in
+                    guard let member = members[ObjectIdentifier(section)] else {
+                        throw failure(.sectionNotAttached)
+                    }
+                    return member
+                }
+            }
+        } catch {
+            reject(error, completion: completion)
+            return
         }
+
+        // Composition captures include a fallback for instances that an earlier queued
+        // operation removes. Unselected survivors can still use their accepted content.
+        let candidates = incoming ?? selected
+        let captured = candidates.map { $0.captureSnapshot() }
+        let selectedIdentities = Set(selected.map(\.identity))
+        let selectedIndices = candidates.indices.filter { selectedIdentities.contains(candidates[$0].identity) }
+        do throws(CollectionSnapshot.ValidationFailure) {
+            try validateLocally(captured, at: selectedIndices)
+            for index in selectedIndices {
+                let member = candidates[index]
+                guard captured[index].id == member.id else {
+                    throw failure(.staleSectionInstance(String(describing: member.id)))
+                }
+            }
+        } catch {
+            reject(error, completion: completion)
+            return
+        }
+
+        var accepted: [ObjectIdentifier: Member]?
+        submit(Submission(makeTarget: { baseline throws(CollectionSnapshot.ValidationFailure) in
+            guard let incoming else {
+                for member in selected {
+                    guard self.members[member.identity] === member else {
+                        throw self.failure(.staleSectionInstance(String(describing: member.id)))
+                    }
+                }
+                let replacements = Dictionary(uniqueKeysWithValues: captured.map { ($0.id, $0) })
+                return try CollectionSnapshot(baseline.sections.map { replacements[$0.id] ?? $0 })
+            }
+
+            var next: [ObjectIdentifier: Member] = [:]
+            var contents: [SectionSnapshot] = []
+            for (candidate, capture) in zip(incoming, captured) {
+                if let current = self.members[candidate.identity] {
+                    guard current.id == candidate.id, let content = baseline.sectionsById[current.id] else {
+                        throw self.failure(.staleSectionInstance(String(describing: candidate.id)))
+                    }
+                    next[current.identity] = current
+                    contents.append(selectedIdentities.contains(candidate.identity) ? capture : content)
+                } else {
+                    guard candidate.context.owner == nil else { throw self.failure(.sectionAlreadyAttached) }
+                    next[candidate.identity] = candidate
+                    contents.append(capture)
+                }
+            }
+            let target = try CollectionSnapshot(contents)
+            // Reserve only after the complete target is valid, before UIKit can suspend.
+            for member in next.values where self.members[member.identity] == nil {
+                member.context.owner = member
+            }
+            accepted = next
+            self.displayMembers = Dictionary(uniqueKeysWithValues: next.values.map { ($0.id, $0) })
+            return target
+        }, animated: animated, mode: mode, didApply: { [self] in
+            guard let accepted, let incoming else { return }
+            acceptMembers(accepted, in: incoming)
+        }, completion: completion))
+    }
+
+    private func validateMembership(_ incoming: [Member]) throws(CollectionSnapshot.ValidationFailure) {
+        var ids: [AnyHashable: Int] = [:]
+        var contexts = Set<ObjectIdentifier>()
+        for (index, member) in incoming.enumerated() {
+            if let first = ids.updateValue(index, forKey: member.id) {
+                throw .init(
+                    .duplicateSectionId(String(describing: member.id)),
+                    locations: [.init(section: first), .init(section: index)]
+                )
+            }
+            guard contexts.insert(ObjectIdentifier(member.context)).inserted else {
+                throw failure(.sectionAlreadyAttached)
+            }
+        }
+    }
+
+    private func acceptMembers(_ accepted: [ObjectIdentifier: Member], in incoming: [Member]) {
+        let removed = members.values.filter { accepted[$0.identity] !== $0 }
+        let added = incoming.compactMap { candidate -> Member? in
+            guard members[candidate.identity] == nil else { return nil }
+            return accepted[candidate.identity]
+        }
+        members = accepted
+        for member in accepted.values {
+            member.context.submit = { [weak self, weak member] animated, mode in
+                guard let self, let member else { throw CollectionUpdateError.sectionNotAttached }
+                try await self.update([member.section]).apply(animated: animated, mode: mode)
+            }
+        }
+        for member in removed { member.detach() }
+        for member in added { member.attach() }
+        for member in added { member.setVisible(isVisible) }
     }
 
     private func submit(_ submission: Submission) {
@@ -441,30 +464,10 @@ public final class CollectionOrchestrator {
         emptyView = nil
         previousBackgroundView = nil
     }
-    private func updateMembers(_ selected: [Member], animated: Bool, mode: CollectionUpdateMode) async throws {
-        let captured = selected.map { $0.captureSnapshot() }
-        do { try validateLocally(captured) }
-        catch {
-            report(error.diagnostic)
-            throw error.error
-        }
-        for (index, member) in selected.enumerated() where captured[index].id != member.id {
-            throw CollectionUpdateError.staleSectionInstance(String(describing: member.id))
-        }
-        try await enqueue(animated: animated, mode: mode, makeTarget: { baseline throws(CollectionSnapshot.ValidationFailure) in
-            for member in selected {
-                guard self.members[member.identity] === member else {
-                    throw self.failure(.staleSectionInstance(String(describing: member.id)))
-                }
-            }
-            let replacements = Dictionary(uniqueKeysWithValues: captured.map { ($0.id, $0) })
-            return try CollectionSnapshot(baseline.sections.map { replacements[$0.id] ?? $0 })
-        })
-    }
-
-    private func validateLocally(_ contents: [SectionSnapshot]) throws(CollectionSnapshot.ValidationFailure) {
+    private func validateLocally(_ contents: [SectionSnapshot], at indices: [Int]) throws(CollectionSnapshot.ValidationFailure) {
         var ids: [AnyHashable: Int] = [:]
-        for (index, content) in contents.enumerated() {
+        for index in indices {
+            let content = contents[index]
             if let first = ids.updateValue(index, forKey: content.id) {
                 throw CollectionSnapshot.ValidationFailure(
                     .duplicateSectionId(String(describing: content.id)),

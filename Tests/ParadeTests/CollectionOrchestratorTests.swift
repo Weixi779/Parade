@@ -14,18 +14,18 @@ struct CollectionOrchestratorTests {
         let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
         let events = Events()
-        try await fixture.orchestrator.setSections([TestSection(id: "messages", cells: [
+        try await fixture.orchestrator.compose([TestSection(id: "messages", cells: [
             AnyCellPresenter(TextPresenter(id: 1, text: "Hello", action: "old", events: events)),
-        ])], animated: false)
+        ])]).apply(animated: false)
         let cell = try #require(fixture.collectionView.cellForItem(at: IndexPath(
             item: 0,
             section: 0
         )) as? TextCell)
         let configurations = cell.configurations
         fixture.collectionView.resetCounts()
-        try await fixture.orchestrator.setSections([TestSection(id: "messages", cells: [
+        try await fixture.orchestrator.compose([TestSection(id: "messages", cells: [
             AnyCellPresenter(TextPresenter(id: 1, text: "Hello", action: "new", events: events)),
-        ])], animated: false)
+        ])]).apply(animated: false)
         cell.action?()
         fixture.collectionView.delegate?.collectionView?(
             fixture.collectionView,
@@ -45,15 +45,15 @@ struct CollectionOrchestratorTests {
     func contentAndSelfSizing(backend: CollectionBackend) async throws {
         let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
-        try await fixture.orchestrator.setSections([textSection("messages", [1])], animated: false)
+        try await fixture.orchestrator.compose([textSection("messages", [1])]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let cell = try #require(fixture.collectionView.cellForItem(at: path) as? TextCell)
         let oldHeight = cell.frame.height
         fixture.collectionView.resetCounts()
         let longText = String(repeating: "A long message wraps onto another line. ", count: 12)
-        try await fixture.orchestrator.setSections([TestSection(id: "messages", cells: [
+        try await fixture.orchestrator.compose([TestSection(id: "messages", cells: [
             AnyCellPresenter(TextPresenter(id: 1, text: longText)),
-        ])], animated: false)
+        ])]).apply(animated: false)
         let updated = try #require(fixture.collectionView.cellForItem(at: path) as? TextCell)
         #expect(updated === cell)
         #expect(updated.label.text == longText)
@@ -68,11 +68,11 @@ struct CollectionOrchestratorTests {
     func replacingCellType(backend: CollectionBackend) async throws {
         let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
-        try await fixture.orchestrator.setSections([textSection("messages", [1])], animated: false)
+        try await fixture.orchestrator.compose([textSection("messages", [1])]).apply(animated: false)
         fixture.collectionView.resetCounts()
-        try await fixture.orchestrator.setSections([TestSection(id: "messages", cells: [
+        try await fixture.orchestrator.compose([TestSection(id: "messages", cells: [
             AnyCellPresenter(ColorPresenter(id: 1, title: "Notice")),
-        ])], animated: false)
+        ])]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         #expect(fixture.collectionView.cellForItem(at: path) is ColorCell)
         if backend == .manual {
@@ -86,17 +86,16 @@ struct CollectionOrchestratorTests {
     func movedCellChangesType(backend: CollectionBackend) async throws {
         let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
-        try await fixture.orchestrator.setSections(
-            [textSection("removed", [1, 2]), textSection("retained", [3])],
-            animated: false
-        )
-        try await fixture.orchestrator.setSections([
+        try await fixture.orchestrator.compose(
+            [textSection("removed", [1, 2]), textSection("retained", [3])]
+        ).apply(animated: false)
+        try await fixture.orchestrator.compose([
             TestSection(
                 id: "inserted",
                 cells: [AnyCellPresenter(ColorPresenter(id: 1, title: "Moved notice"))]
             ),
             textSection("retained", [3, 2]),
-        ], animated: true)
+        ]).apply(animated: true)
         let path = IndexPath(item: 0, section: 0)
         #expect(fixture.collectionView.cellForItem(at: path) is ColorCell)
         #expect(fixture.orchestrator.sectionIds == [
@@ -120,7 +119,7 @@ struct CollectionOrchestratorTests {
                 events: events
             )),
         ])
-        try await fixture.orchestrator.setSections([old], animated: false)
+        try await fixture.orchestrator.compose([old]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let view = try #require(fixture.collectionView.supplementaryView(
             forElementKind: UICollectionView.elementKindSectionHeader,
@@ -137,7 +136,7 @@ struct CollectionOrchestratorTests {
                 events: events
             )),
         ])
-        try await fixture.orchestrator.setSections([updated], animated: false)
+        try await fixture.orchestrator.compose([updated]).apply(animated: false)
         view.action?()
         #expect(view.label.text == "Second")
         #expect(events.actions == ["new"])
@@ -151,13 +150,13 @@ struct CollectionOrchestratorTests {
     func replacingSupplementaryType(backend: CollectionBackend) async throws {
         let fixture = CollectionFixture(headers: true, backend: backend)
         defer { fixture.close() }
-        try await fixture.orchestrator.setSections([TestSection(id: "s", cells: [], supplementaryViews: [
+        try await fixture.orchestrator.compose([TestSection(id: "s", cells: [], supplementaryViews: [
             AnySupplementaryPresenter(HeaderPresenter(id: "h", text: "Header")),
-        ])], animated: false)
+        ])]).apply(animated: false)
         fixture.collectionView.resetCounts()
-        try await fixture.orchestrator.setSections([TestSection(id: "s", cells: [], supplementaryViews: [
+        try await fixture.orchestrator.compose([TestSection(id: "s", cells: [], supplementaryViews: [
             AnySupplementaryPresenter(AlternateHeaderPresenter(id: "h")),
-        ])], animated: false)
+        ])]).apply(animated: false)
         let view = fixture.collectionView.supplementaryView(
             forElementKind: UICollectionView.elementKindSectionHeader,
             at: IndexPath(
@@ -175,7 +174,7 @@ struct CollectionOrchestratorTests {
     func supplementaryTopologyFollowsDisplayVersion(backend: CollectionBackend) async throws {
         let fixture = CollectionFixture(dynamicHeaders: true, backend: backend)
         defer { fixture.close() }
-        try await fixture.orchestrator.setSections([textSection("section", [1, 2])], animated: false)
+        try await fixture.orchestrator.compose([textSection("section", [1, 2])]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let kind = UICollectionView.elementKindSectionHeader
         #expect(fixture.orchestrator.supplementaryPresenter(ofKind: kind, at: path) == nil)
@@ -184,13 +183,13 @@ struct CollectionOrchestratorTests {
             id: "header",
             text: "Added"
         ))]
-        try await fixture.orchestrator.setSections([withHeader], animated: false)
+        try await fixture.orchestrator.compose([withHeader]).apply(animated: false)
         let header = try #require(fixture.collectionView.supplementaryView(
             forElementKind: kind,
             at: path
         ) as? HeaderView)
         #expect(header.label.text == "Added")
-        try await fixture.orchestrator.setSections([textSection("section", [3, 1])], animated: false)
+        try await fixture.orchestrator.compose([textSection("section", [3, 1])]).apply(animated: false)
         #expect(fixture.orchestrator.supplementaryPresenter(ofKind: kind, at: path) == nil)
         #expect(fixture.collectionView.supplementaryView(forElementKind: kind, at: path) == nil)
         #expect(fixture.collectionView.numberOfItems(inSection: 0) == 2)
@@ -200,19 +199,17 @@ struct CollectionOrchestratorTests {
     func duplicateValidation(backend: CollectionBackend) async throws {
         let fixture = CollectionFixture(backend: backend)
         defer { fixture.close() }
-        try await fixture.orchestrator.setSections([textSection("one", [1])], animated: false)
+        try await fixture.orchestrator.compose([textSection("one", [1])]).apply(animated: false)
         fixture.collectionView.resetCounts()
         await #expect(throws: CollectionUpdateError.duplicateCellId("2")) {
-            try await fixture.orchestrator.setSections(
-                [textSection("one", [2]), textSection("two", [2])],
-                animated: false
-            )
+            try await fixture.orchestrator.compose(
+                [textSection("one", [2]), textSection("two", [2])]
+            ).apply(animated: false)
         }
         await #expect(throws: CollectionUpdateError.duplicateSectionId("same")) {
-            try await fixture.orchestrator.setSections(
-                [textSection("same", []), textSection("same", [])],
-                animated: false
-            )
+            try await fixture.orchestrator.compose(
+                [textSection("same", []), textSection("same", [])]
+            ).apply(animated: false)
         }
         #expect(fixture.orchestrator.sectionIds == [AnyHashable("one")])
         #expect(fixture.orchestrator.indexPath(for: 1) == IndexPath(item: 0, section: 0))
@@ -228,7 +225,7 @@ struct CollectionOrchestratorTests {
         let fixture = CollectionFixture()
         defer { fixture.close() }
         let owner = fixture.orchestrator
-        try await owner.setSections([textSection("s", [0])], animated: false)
+        try await owner.compose([textSection("s", [0])]).apply(animated: false)
         fixture.collectionView.resetCounts()
         var completions: [String] = []
         var applied = 0
@@ -237,14 +234,14 @@ struct CollectionOrchestratorTests {
         owner.onDiagnostic = { diagnostics.append($0) }
 
         await withCheckedContinuation { continuation in
-            owner.setSections([textSection("s", [1])], animated: true, mode: mode) { result in
+            owner.compose([textSection("s", [1])]).apply(animated: true, mode: mode) { result in
                 if case .success = result { completions.append("first") }
             }
-            owner.setSections([textSection("s", [2, 2])], mode: mode) { result in
+            owner.compose([textSection("s", [2, 2])]).apply(mode: mode) { result in
                 #expect(owner.appliedRevision == 2)
                 if case .failure(.duplicateCellId("2")) = result { completions.append("rejected") }
             }
-            owner.setSections([textSection("s", [3])], animated: false, mode: mode) { result in
+            owner.compose([textSection("s", [3])]).apply(animated: false, mode: mode) { result in
                 if case .success = result { completions.append("last") }
                 continuation.resume()
             }
@@ -271,9 +268,9 @@ struct CollectionOrchestratorTests {
         let owner = fixture.orchestrator
         var diagnostics: [CollectionDiagnostic] = []
         owner.onDiagnostic = { diagnostics.append($0) }
-        try await owner.setSections([textSection("s", [0, 1, 2, 3])], animated: false)
+        try await owner.compose([textSection("s", [0, 1, 2, 3])]).apply(animated: false)
         fixture.collectionView.resetCounts()
-        try await owner.setSections([textSection("s", [1, 2, 3, 0])], animated: false)
+        try await owner.compose([textSection("s", [1, 2, 3, 0])]).apply(animated: false)
         #expect(fixture.collectionView.movedItems.count == 1)
         #expect(fixture.collectionView.movedItems.first?.from == IndexPath(item: 0, section: 0))
         #expect(fixture.collectionView.movedItems.first?.to == IndexPath(item: 3, section: 0))
@@ -314,7 +311,7 @@ struct CollectionOrchestratorTests {
         let fixture = CollectionFixture(diffAlgorithm: failure)
         defer { fixture.close() }
         let owner = fixture.orchestrator
-        try await owner.setSections([textSection("s", [1])], animated: false)
+        try await owner.compose([textSection("s", [1])]).apply(animated: false)
         fixture.collectionView.resetCounts()
         var diagnostics: [CollectionDiagnostic] = []
         var completions: [String] = []
@@ -329,12 +326,12 @@ struct CollectionOrchestratorTests {
                     item: 0,
                     section: 0
                 )) is TextCell)
-                owner.setSections([textSection("s", [2, 3])], animated: false) { result in
+                owner.compose([textSection("s", [2, 3])]).apply(animated: false) { result in
                     if case .success = result { completions.append("next") }
                     continuation.resume()
                 }
             }
-            owner.setSections([textSection("s", [2])], animated: false) { result in
+            owner.compose([textSection("s", [2])]).apply(animated: false) { result in
                 if case .success = result { completions.append("recovered") }
             }
         }
@@ -365,13 +362,13 @@ struct CollectionOrchestratorTests {
                 #expect(!inApply)
                 #expect(owner.appliedRevision == 0)
                 #expect(owner.numberOfSections == 0)
-                owner.setSections([textSection("s", [1])], animated: false) { result in
+                owner.compose([textSection("s", [1])]).apply(animated: false) { result in
                     if case .success = result { successes += 1 }
                     continuation.resume()
                 }
             }
             inApply = true
-            owner.setSections([textSection("s", [1, 1])], mode: .reload) { result in
+            owner.compose([textSection("s", [1, 1])]).apply(mode: .reload) { result in
                 if case .failure = result { failures += 1 }
             }
             inApply = false
@@ -389,16 +386,16 @@ struct CollectionOrchestratorTests {
         await withCheckedContinuation { continuation in
             fixture.orchestrator.onDidApply = { orchestrator in
                 if orchestrator.appliedRevision == 1 {
-                    orchestrator.setSections([textSection("s", [3])], animated: false) { result in
+                    orchestrator.compose([textSection("s", [3])]).apply(animated: false) { result in
                         if case .success = result { completions.append(3) }
                         continuation.resume()
                     }
                 }
             }
-            fixture.orchestrator.setSections([textSection("s", [1])], animated: true) { result in
+            fixture.orchestrator.compose([textSection("s", [1])]).apply(animated: true) { result in
                 if case .success = result { completions.append(1) }
             }
-            fixture.orchestrator.setSections([textSection("s", [2])], animated: true) { result in
+            fixture.orchestrator.compose([textSection("s", [2])]).apply(animated: true) { result in
                 if case .success = result { completions.append(2) }
             }
         }
@@ -420,7 +417,7 @@ struct CollectionOrchestratorTests {
             cells: [AnyCellPresenter(TextPresenter(id: 1, text: "original"))]
         )
         await withCheckedContinuation { continuation in
-            fixture.orchestrator.setSections([mutable], animated: false) { _ in continuation.resume() }
+            fixture.orchestrator.compose([mutable]).apply(animated: false) { _ in continuation.resume() }
             mutable.cells = []
         }
         #expect(fixture.orchestrator.numberOfItems == 1)
@@ -436,11 +433,11 @@ struct CollectionOrchestratorTests {
         fixture.collectionView.backgroundView = background
         fixture.collectionView.isScrollEnabled = false
         fixture.orchestrator.emptyViewProvider = { empty }
-        try await fixture.orchestrator.setSections([textSection("empty", [])], animated: false)
+        try await fixture.orchestrator.compose([textSection("empty", [])]).apply(animated: false)
         #expect(fixture.collectionView.backgroundView === empty)
         #expect(!fixture.collectionView.isScrollEnabled)
         #expect(fixture.orchestrator.numberOfSections == 1)
-        try await fixture.orchestrator.setSections([textSection("empty", [1])], animated: false)
+        try await fixture.orchestrator.compose([textSection("empty", [1])]).apply(animated: false)
         #expect(fixture.collectionView.backgroundView === background)
         #expect(!fixture.collectionView.isScrollEnabled)
     }
@@ -453,7 +450,7 @@ struct CollectionOrchestratorTests {
         )
         let orchestrator = backend.orchestrator(for: collectionView)
         collectionView.resetCounts()
-        try await orchestrator.setSections([textSection("one", [1, 2])], animated: false)
+        try await orchestrator.compose([textSection("one", [1, 2])]).apply(animated: false)
         if backend == .manual {
             #expect(collectionView.reloads == 1)
             #expect(collectionView.batches == 0)
@@ -496,7 +493,7 @@ struct CollectionOrchestratorTests {
                     )) }
                 )
             }
-            try await fixture.orchestrator.setSections(sections, animated: animated)
+            try await fixture.orchestrator.compose(sections).apply(animated: animated)
             #expect(fixture.orchestrator.sectionIds == value.map { AnyHashable($0.0) })
             #expect(fixture.collectionView.numberOfSections == value.count)
             for (section, pair) in value.enumerated() {

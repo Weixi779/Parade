@@ -90,9 +90,10 @@ its cells, header and native layout together. There is no page-level layout rout
 The IM section owns its messages and expansion state. Receive and expand operations
 call that section's `update()` without rebuilding the other day. The Store controller
 owns shared installation state, passes it to its retained sections, then calls
-`orchestrator.update(sections)` once to update all occurrences atomically.
-`setSections` establishes membership; reusing the same instances preserves their
-accepted content unless they explicitly submit an update.
+`orchestrator.update(sections).apply()` once to update all occurrences atomically.
+`compose(sections).apply()` establishes membership; reusing the same instances preserves
+their accepted content. Chain `updating(sections)` before `apply()` to include selected
+content changes in the same submission. Section-local `update()` stays unchanged.
 
 The same app appears in several Store sections. Its domain ID is shared, while
 `StoreOccurrenceId(section:appId:)` identifies each cell occurrence. Cell presenters

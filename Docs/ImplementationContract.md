@@ -1,8 +1,8 @@
 # Parade implementation contract
 
 This documents the development API as of 2026-09-28, including the unreleased
-section-controller naming. Runtime behavior remains the 0.3 implementation,
-with the compositional-only section model introduced in 0.2.
+section-controller naming and composable collection updates. The section model
+continues to support compositional layouts only.
 
 ## Ownership and public input
 
@@ -27,9 +27,9 @@ with the compositional-only section model introduced in 0.2.
 ## Operations
 
 - Optional `SectionStore.reconcile(_:)` resolves definitions and immediately accepts
-  the resulting ordered instances. `reconcile(_:apply:)` first awaits its callback
-  for structural changes, then accepts membership; unchanged membership skips that
-  callback. Both return `Change` with target controllers, retained instances in target
+  the resulting ordered instances. `reconcile(_:apply:)` awaits its callback for every
+  valid reconciliation, including content-only changes and empty lists, then accepts
+  membership. Both return `Change` with target controllers, retained instances in target
   order, removals in previous order, and an instance/order change flag.
 - Definition matching uses ID plus Input and Controller types. New instances receive
   only `make(input)`; survivors receive the current `update(controller, input)` even
@@ -40,23 +40,35 @@ with the compositional-only section model introduced in 0.2.
   Callback failure preserves membership/order, not staged input or callback effects.
   A returned change retains its controllers and is not a display snapshot. The store
   retains no previous inputs or definition closures and never captures or submits
-  presentations. The caller separately submits retained content through existing APIs.
-- `setSections(_:animated:mode:completion:)` and its async overload change membership and
-  order. Every supplied instance has a submission-time capture for possible attachment.
-  At execution, surviving instances keep accepted content; absent instances use that capture,
-  including the same instance rejoining after an earlier queued removal. Unused captures
-  neither replace nor invalidate a survivor's accepted content.
-- `section.update()` captures one attached module. `orchestrator.update(_:)` captures
-  several modules atomically. Use the latter for cross-section cell transfers.
+  presentations. The callback can submit membership and retained content together with
+  `compose(change.controllers).updating(change.retained).apply()`.
+- `compose(_:)` and `update(_:)` construct a `CollectionUpdate` without capture or queueing.
+  It is a value description retaining its collection and sections. `updating(_:)` adds
+  selections, deduplicated by instance. Copies are independent; each `apply` captures fresh
+  content. Animation and update mode are chosen at apply. The callback overload requires
+  a completion; async apply awaits the same boundary.
+- A composition specifies complete membership and order. At apply, every supplied instance
+  is captured for possible attachment. At execution, unselected survivors keep accepted
+  content; selected survivors and absent instances use their captures. This includes the
+  same instance rejoining after an earlier queued removal. Unused captures neither replace
+  nor invalidate a survivor's accepted content. Selected instances must belong to the target.
+- `section.update()` still immediately captures and submits one attached module.
+  `orchestrator.update(sections).apply()` submits several attached modules together without
+  changing membership. Attachment is checked at apply, not description construction.
+- A combined composition/content change builds one complete target and validates it before
+  reservation or UIKit work. It is one queued submission, revision and completion, allowing
+  cell transfers to newcomers without validating an intermediate membership-only target.
 - `.diff` and `.reload` select UIKit execution strategy; they do not change an operation's
-  membership/content meaning. The previous full-list `apply` API is removed.
-- `setSections` validates member IDs and distinct update contexts at submission. Its
-  captured content is conditional: an earlier operation may attach or remove an instance.
+  membership/content meaning. Old collection `setSections` and immediate `update` are removed.
+- Applying a composition validates member IDs, distinct update contexts and selection
+  membership. Unselected captured content is conditional: an earlier operation may attach
+  or remove an instance.
   Execution resolves membership, selects accepted content or the attachment capture,
   then validates the complete target. Unused captures cannot reject a reorder, including
-  while initial attachment is queued or in progress. Content errors settle in FIFO order.
-- Local `update` operations always use their captured outputs and validate them at
-  submission. Execution checks attachment identity and validates the complete target.
+  while initial attachment is queued or in progress. Conditional content errors settle
+  in FIFO order. Selected content is always used and is locally validated at apply.
+- Content-only operations additionally capture the attachment generation. Execution checks
+  that identity and validates the complete target against the latest completed baseline.
 - Section IDs are unique. Cell IDs identify globally unique display occurrences. Supplementary
   identity is section/kind-local; placement is section/kind/item. Empty sections remain present.
 - New contexts are reserved before entering UIKit and become usable when attachment completes.
@@ -78,7 +90,7 @@ with the compositional-only section model introduced in 0.2.
   that order. Reentrant visibility changes are balanced after the current callback.
   Old view bindings carry attachment identity without retaining the section instance.
 - Orchestrator destruction schedules remaining detachments on MainActor. Explicitly
-  awaiting `setSections([])` completes cleanup before transferring section ownership.
+  awaiting `compose([]).apply()` completes cleanup before transferring section ownership.
   Display observation does not itself cancel business work or measure exposure/occlusion.
 
 ## Queue and completion

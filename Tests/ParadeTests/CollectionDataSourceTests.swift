@@ -23,7 +23,7 @@ struct CollectionDataSourceTests {
         var completed: [Int] = []
         await withCheckedContinuation { started in
             probe.didStart = { started.resume() }
-            owner.setSections([PublicSection("first", [1])], animated: false) { _ in completed.append(1) }
+            owner.compose([PublicSection("first", [1])]).apply(animated: false) { _ in completed.append(1) }
         }
         #expect(owner.isApplying)
         #expect(owner.appliedRevision == 0)
@@ -32,7 +32,7 @@ struct CollectionDataSourceTests {
         #expect(completed.isEmpty)
 
         await withCheckedContinuation { finished in
-            owner.setSections([PublicSection("second", [2, 3])], animated: false) { _ in
+            owner.compose([PublicSection("second", [2, 3])]).apply(animated: false) { _ in
                 completed.append(2)
                 finished.resume()
             }
@@ -76,14 +76,14 @@ struct CollectionDataSourceTests {
             retained = source
             return source
         }
-        try await owner?.setSections([PublicSection("s", [1, 2])], animated: false)
-        try await owner?.setSections([PublicSection("s", [2, 1])], animated: false)
+        try await owner?.compose([PublicSection("s", [1, 2])]).apply(animated: false)
+        try await owner?.compose([PublicSection("s", [2, 1])]).apply(animated: false)
         #expect(owner?.indexPath(for: PublicID(1)) == .init(item: 1, section: 0))
-        try await owner?.setSections([], animated: false)
+        try await owner?.compose([]).apply(animated: false)
         #expect(owner?.indexPath(for: PublicID(1)) == nil)
-        try await owner?.setSections([PublicSection("s", [1])], animated: false)
+        try await owner?.compose([PublicSection("s", [1])]).apply(animated: false)
         #expect(owner?.indexPath(for: PublicID(1)) == .init(item: 0, section: 0))
-        try await owner?.setSections([PublicSection("reloaded", [2])], animated: false, mode: .reload)
+        try await owner?.compose([PublicSection("reloaded", [2])]).apply(animated: false, mode: .reload)
         #expect(owner?.indexPath(for: PublicID(1)) == nil)
         #expect(owner?.indexPath(for: PublicID(2)) == .init(item: 0, section: 0))
         #expect(owner?.sectionIndex(for: "s") == nil)

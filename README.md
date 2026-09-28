@@ -101,7 +101,7 @@ let collectionView = UICollectionView(
 )
 let orchestrator = CollectionOrchestrator(collectionView: collectionView)
 let conversation = ConversationSection()
-try await orchestrator.setSections([conversation], animated: false)
+try await orchestrator.compose([conversation]).apply(animated: false)
 try await conversation.receive(MessagePresenter(id: UUID(), text: "Hello"))
 ```
 
@@ -116,6 +116,7 @@ The names distinguish instances, content, and display versions:
 | Type | Meaning |
 | --- | --- |
 | `SectionStore` | Maintains stable controller instances across changing inputs. |
+| `CollectionUpdate` | Describes a change to perform when `apply()` is called. |
 | `SectionContent` | Describes the display content returned by `captureContent()`. |
 | `SectionSnapshot` | Combines one section's identity and captured content for an update. |
 | `CollectionSnapshot` | Holds one validated display version of the whole collection. |
@@ -124,10 +125,33 @@ A store's live instances may already contain newer inputs while the collection s
 displays an older snapshot. Snapshots let old and target display versions coexist.
 They preserve captured content; they do not deep-copy arbitrary business objects.
 
-`setSections` changes membership and order while preserving surviving instances'
-last accepted content. `section.update()` submits one module's new presentation;
-`orchestrator.update([first, second])` submits several atomically, including cell
-transfers. Await initial attachment before using the module's update context.
+Describe a collection change, then call `apply()` to submit it:
+
+```swift
+// Change membership and order, keeping surviving sections' accepted content.
+try await orchestrator.compose([header, feed, footer]).apply()
+
+// Submit content for attached sections without changing membership.
+try await orchestrator.update([feed, footer]).apply()
+
+// Change membership and selected content together, in one submission.
+try await orchestrator.compose([header, feed, newFooter]).updating([feed]).apply()
+```
+
+`compose` supplies the complete target order. New instances use their current content;
+survivors keep their last accepted content unless selected with `updating`.
+Selections must be the actual instances in that target. Repeated `updating` calls
+accumulate, capturing each selected instance once. A combined update validates the
+final target and completes once, including when a cell moves from a survivor to a newcomer.
+
+Building a `CollectionUpdate` does not capture or submit anything. `apply` captures
+current content before queueing; later mutations do not change that submission.
+The description retains its collection and section instances, and can be reused:
+each `apply` captures a fresh version. Its callback form requires an explicit completion:
+`orchestrator.compose(sections).apply { result in /* handle completion */ }`.
+
+`section.update()` remains an immediate async submission for one module, with no
+extra `apply()`. Await initial attachment before using the module's update context.
 Section IDs are stable and unique; cell IDs are globally unique display occurrences.
 Removed or replaced module instances cannot apply queued updates to their successors.
 
@@ -167,7 +191,7 @@ visibility does not automatically cancel requests or end an attachment.
 
 When the orchestrator is released, remaining attachments are cleaned up in a
 subsequent MainActor task. To finish cleanup before transferring sections to another
-collection, explicitly await `setSections([])` first. Lifecycle callbacks should
+collection, explicitly await `orchestrator.compose([]).apply()` first. Lifecycle callbacks should
 not retain the orchestrator.
 
 Parade leaves `isPrefetchingEnabled` unchanged; UIKit defaults it to `true` and
@@ -298,20 +322,19 @@ let definitions = models.map { model in
         update: { $0.receive($1) } // Stage input without submitting a presentation.
     )
 }
-let change = try await sections.reconcile(definitions) { change in
-    try await orchestrator.setSections(change.controllers)
-}
-if !change.retained.isEmpty {
-    try await orchestrator.update(change.retained)
+try await sections.reconcile(definitions) { change in
+    try await orchestrator
+        .compose(change.controllers)
+        .updating(change.retained)
+        .apply()
 }
 ```
 
-`reconcile(_:apply:)` invokes `apply` only when instances or their order change,
-and accepts that membership only after the callback succeeds. Retained sections
-receive the new input before the callback, but keep their accepted presentations
-until the caller submits content. A section with its own submission policy can be
-updated through that policy instead of the final batch above. Structure and content
-are separate submissions; this sequence is not one atomic display transaction.
+`reconcile(_:apply:)` invokes its callback for every valid reconciliation, including
+content-only changes and empty lists. It accepts membership only after the callback
+succeeds. Retained sections receive new input before the callback; the chain above
+submits membership and their content as one validated target. Select only the retained
+sections whose content should participate if some sections submit independently.
 
 Reuse requires the same ID, Input type, and Controller type. Changing either type
 replaces the instance. Duplicate IDs reject the whole input before any creation or
@@ -321,8 +344,8 @@ definition closures. `Change.retained` follows target order; `Change.removed` fo
 previous order and includes same-ID replacements. Keeping a change retains its
 controllers, including removed instances.
 
-Serialize calls to a store, including the full async reconciliation and any follow-up
-content submission. Do not reenter it from definition or apply callbacks. If `apply`
+Serialize calls to a store, including the full async reconciliation.
+Do not reenter it from definition or apply callbacks. If `apply`
 throws, including cancellation, the store preserves its old membership and order;
 already-mutated business state and callback side effects are not rolled back.
 The synchronous `reconcile(_:)` accepts immediately and returns the same change

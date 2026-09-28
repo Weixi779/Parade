@@ -7,13 +7,16 @@ import Testing
 @MainActor
 @Suite("Section instance reconciliation", .timeLimit(.minutes(1)))
 struct SectionStoreTests {
-    @Test("An empty composition needs no structural submission")
+    @Test("Even an empty composition reaches the caller's submission boundary")
     func emptyComposition() async throws {
         let store = SectionStore()
-        let change = try await store.reconcile([]) { _ in
-            Issue.record("An unchanged empty store must not submit membership")
+        var submissions = 0
+        let change = try await store.reconcile([]) { change in
+            submissions += 1
+            #expect(change.controllers.isEmpty)
         }
 
+        #expect(submissions == 1)
         #expect(store.ids.isEmpty)
         #expect(store.controllers.isEmpty)
         #expect(change.controllers.isEmpty)
@@ -74,10 +77,14 @@ struct SectionStoreTests {
         let section = try #require(store.controllers.first as? Controller<Regular>)
         section.value = "local edit"
 
-        let change = try await store.reconcile([definition("a", value: "server")]) { _ in
-            Issue.record("Content changes must not resubmit membership")
+        var submissions = 0
+        let change = try await store.reconcile([definition("a", value: "server")]) { change in
+            submissions += 1
+            #expect(change.retained.first === section)
+            #expect(section.value == "server")
         }
 
+        #expect(submissions == 1)
         #expect(section.value == "server")
         #expect(change.retained.first === section)
         #expect(!change.hasStructuralChanges)

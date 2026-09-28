@@ -17,8 +17,33 @@ state and lifecycle from immutable cell and supplementary presenters.
 Update section conformances and store accessors to these names. `SectionDefinition`
 now calls its section type parameter `Controller`; creation and update closures
 retain the same signatures and behavior. Section examples use controller names.
-The old names are not retained as aliases. Content capture, reconciliation,
-attachment/display callbacks, layout, and submission behavior are unchanged.
+The old names are not retained as aliases. This rename does not change runtime behavior;
+the collection submission changes below are a separate API change.
+
+### Composable collection updates
+
+Collection changes are now descriptions with one explicit execution point:
+
+| Previous call | New call |
+| --- | --- |
+| `setSections(sections, animated: false)` | `compose(sections).apply(animated: false)` |
+| `update(sections, animated: false)` on the orchestrator | `update(sections).apply(animated: false)` |
+| Structural submission followed by retained-content submission | `compose(sections).updating(retained).apply()` |
+
+`CollectionUpdate` captures nothing until `apply`, which captures current content and
+enqueues one combined target. Repeated `updating` calls accumulate distinct instances;
+reapplying the description captures fresh content. Unselected survivors keep their
+accepted content. Selections outside a composition fail with `sectionNotInComposition`.
+Combined submissions support transferring a cell to a new section without an invalid
+intermediate target. The callback `apply` overload requires a completion; the async
+overload awaits the same full submission. Old collection entry points are removed.
+
+Section-level `update()`, `updateContext`, `captureContent()` and lifecycle protocols
+are unchanged. `SectionStore.reconcile(_:apply:)` now calls its callback for every
+valid reconciliation, including unchanged membership and empty targets. Submit
+`compose(change.controllers).updating(change.retained).apply()` inside that callback;
+remove the old follow-up content submission. Membership is accepted after success;
+failure preserves membership but does not roll back staged business input.
 
 ## 0.3.0
 

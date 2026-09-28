@@ -36,10 +36,9 @@ struct CollectionViewBridgeTests {
         let fixture = Fixture()
         defer { fixture.window.isHidden = true }
         let events = Events()
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("old", token: "old", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("old", token: "old", events: events)])]
+        ).apply(animated: false)
         let cell = try #require(fixture.view.cellForItem(at: .init(item: 0, section: 0)))
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
         #expect(events.started == ["old"])
@@ -66,20 +65,18 @@ struct CollectionViewBridgeTests {
         let events = Events()
         let globalEvents = GlobalEvents()
         fixture.owner.eventHandler = globalEvents
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("same", token: "first", events: events)])]
+        ).apply(animated: false)
         let initial = try #require(fixture.view.cellForItem(at: .init(
             item: 0,
             section: 0
         )) as? ActionCell)
         let configurations = events.configurationCount
 
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("same", token: "second", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("same", token: "second", events: events)])]
+        ).apply(animated: false)
         let current = try #require(fixture.view.cellForItem(at: .init(
             item: 0,
             section: 0
@@ -105,10 +102,9 @@ struct CollectionViewBridgeTests {
         defer { fixture.window.isHidden = true }
         let events = Events()
         let path = IndexPath(item: 0, section: 0)
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("same", token: "first", events: events)])]
+        ).apply(animated: false)
         let view = try #require(fixture.view.cellForItem(at: path) as? ActionCell)
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
         bridge.collectionView(fixture.view, willDisplay: view, forItemAt: path)
@@ -143,17 +139,15 @@ struct CollectionViewBridgeTests {
         let path = IndexPath(item: 0, section: 0)
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
 
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("same", token: "first", events: events)])]
+        ).apply(animated: false)
         let original = try #require(fixture.view.cellForItem(at: path))
         bridge.collectionView(fixture.view, didSelectItemAt: path)
 
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [AnyCellPresenter(StaticPresenter(id: "same"))])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [AnyCellPresenter(StaticPresenter(id: "same"))])]
+        ).apply(animated: false)
         #expect(fixture.view.cellForItem(at: path) === original)
         let staticCell = try #require(fixture.view.cellForItem(at: path) as? ActionCell)
         #expect(staticCell.action == nil)
@@ -162,10 +156,9 @@ struct CollectionViewBridgeTests {
         #expect(events.selected == ["first"])
         #expect(globalEvents.selectedIds == [AnyHashable("same"), AnyHashable("same")])
 
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("same", token: "latest", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("same", token: "latest", events: events)])]
+        ).apply(animated: false)
         #expect(fixture.view.cellForItem(at: path) === original)
         bridge.collectionView(fixture.view, didSelectItemAt: path)
         #expect(events.selected == ["first", "latest"])
@@ -190,7 +183,7 @@ struct CollectionViewBridgeTests {
             cells: [cell("cell", token: "cell", events: events)],
             supplementaryViews: [first]
         )
-        try await fixture.owner.setSections([section], animated: false)
+        try await fixture.owner.compose([section]).apply(animated: false)
         let original = try #require(fixture.view.supplementaryView(
             forElementKind: kind,
             at: path
@@ -201,7 +194,7 @@ struct CollectionViewBridgeTests {
         #expect(first.registrationKey == replacement.registrationKey)
         #expect(first != replacement)
         section.supplementaryViews = [replacement]
-        try await fixture.owner.update([section], animated: false)
+        try await fixture.owner.update([section]).apply(animated: false)
         let retained = try #require(fixture.view.supplementaryView(
             forElementKind: kind,
             at: path
@@ -216,7 +209,7 @@ struct CollectionViewBridgeTests {
             token: "latest",
             content: "Latest"
         ))]
-        try await fixture.owner.update([section], animated: false)
+        try await fixture.owner.update([section]).apply(animated: false)
         let current = try #require(fixture.view.supplementaryView(
             forElementKind: kind,
             at: path
@@ -242,7 +235,7 @@ struct CollectionViewBridgeTests {
             allowed: false,
             events: events
         ))
-        try await fixture.owner.setSections([Section(id: "section", cells: [first])], animated: false)
+        try await fixture.owner.compose([Section(id: "section", cells: [first])]).apply(animated: false)
         let original = try #require(fixture.view.cellForItem(at: path))
         let initialConfigurations = events.configurations
         #expect(!bridge.collectionView(fixture.view, shouldSelectItemAt: path))
@@ -255,7 +248,7 @@ struct CollectionViewBridgeTests {
             events: events
         ))
         #expect(first == next)
-        try await fixture.owner.setSections([Section(id: "section", cells: [next])], animated: false)
+        try await fixture.owner.compose([Section(id: "section", cells: [next])]).apply(animated: false)
         #expect(fixture.view.cellForItem(at: path) === original)
         #expect(events.configurations == initialConfigurations)
         #expect(bridge.collectionView(fixture.view, shouldSelectItemAt: path))
@@ -293,10 +286,9 @@ struct CollectionViewBridgeTests {
         let fixture = Fixture()
         defer { fixture.window.isHidden = true }
         let events = Events()
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("same", token: "original", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("same", token: "original", events: events)])]
+        ).apply(animated: false)
         let visible = try #require(fixture.view.cellForItem(at: .init(
             item: 0,
             section: 0
@@ -325,13 +317,13 @@ struct CollectionViewBridgeTests {
         defer { fixture.window.isHidden = true }
         let events = Events()
         let header = AnySupplementaryPresenter(Header(id: "old-header", events: events))
-        try await fixture.owner.setSections([
+        try await fixture.owner.compose([
             Section(
                 id: "section",
                 cells: [cell("cell", token: "cell", events: events)],
                 supplementaryViews: [header]
             )
-        ], animated: false)
+        ]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let view = try #require(fixture.view.supplementaryView(
             forElementKind: UICollectionView.elementKindSectionHeader,
@@ -373,10 +365,9 @@ struct CollectionViewBridgeTests {
         let path = IndexPath(item: 0, section: 0)
         let kind = UICollectionView.elementKindSectionHeader
         let first = AnySupplementaryPresenter(Header(id: "header", events: events, token: "first"))
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [], supplementaryViews: [first])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [], supplementaryViews: [first])]
+        ).apply(animated: false)
         let view = try #require(fixture.view.supplementaryView(
             forElementKind: kind,
             at: path
@@ -431,10 +422,9 @@ struct CollectionViewBridgeTests {
         defer { fixture.window.isHidden = true }
         let events = Events()
         let path = IndexPath(item: 0, section: 0)
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("same", token: "first", events: events)])],
-            animated: false
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("same", token: "first", events: events)])]
+        ).apply(animated: false)
         let view = try #require(fixture.view.cellForItem(at: path) as? ActionCell)
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
         fixture.view.contentOffset = CGPoint(x: 0, y: 1_000)
@@ -475,7 +465,7 @@ struct CollectionViewBridgeTests {
         let bridge = try #require(view.delegate as? CollectionViewBridge)
         let events = Events()
         let original = cell("prepared", token: "first", events: events, content: "original")
-        try await owner.setSections([Section(id: "section", cells: [original])], animated: false)
+        try await owner.compose([Section(id: "section", cells: [original])]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let prepared = try #require(view.cellForItem(at: path) as? ActionCell)
         #expect(events.started == ["first"])
@@ -533,10 +523,9 @@ struct CollectionViewBridgeTests {
             token: "first",
             content: "original"
         ))
-        try await owner.setSections(
-            [Section(id: "section", cells: [], supplementaryViews: [original])],
-            animated: false
-        )
+        try await owner.compose(
+            [Section(id: "section", cells: [], supplementaryViews: [original])]
+        ).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let kind = UICollectionView.elementKindSectionHeader
         let prepared = try #require(view.supplementaryView(
@@ -664,11 +653,9 @@ struct CollectionViewBridgeTests {
 
         fixture.view.dataSource = fixture.defaultSource
         fixture.view.setCollectionViewLayout(ownedLayout, animated: false)
-        try await fixture.owner.setSections(
-            [Section(id: "section", cells: [cell("new", token: "new", events: events)])],
-            animated: false,
-            mode: .reload
-        )
+        try await fixture.owner.compose(
+            [Section(id: "section", cells: [cell("new", token: "new", events: events)])]
+        ).apply(animated: false, mode: .reload)
         #expect(fixture.view.cellForItem(at: path) is ActionCell)
         #expect(bridge.collectionView(fixture.view, shouldSelectItemAt: path))
         bridge.collectionView(fixture.view, didSelectItemAt: path)
@@ -688,7 +675,7 @@ struct CollectionViewBridgeTests {
         fixture.owner.onDiagnostic = { diagnostics.append($0) }
         let section = Section(id: "section", cells: [cell("one", token: "one", events: events)])
         section.requestsHeader = true
-        try await fixture.owner.setSections([section], animated: false)
+        try await fixture.owner.compose([section]).apply(animated: false)
         let kind = UICollectionView.elementKindSectionHeader
         let path = IndexPath(item: 0, section: 0)
         let fallback = try #require(fixture.view.supplementaryView(forElementKind: kind, at: path))
@@ -707,7 +694,7 @@ struct CollectionViewBridgeTests {
             id: "header",
             events: events
         ))]
-        try await fixture.owner.update([withHeader], animated: false)
+        try await fixture.owner.update([withHeader]).apply(animated: false)
         #expect(fixture.view.supplementaryView(forElementKind: kind, at: path) is ActionHeader)
         #expect(events.started.contains("header"))
     }

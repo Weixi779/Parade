@@ -54,24 +54,22 @@ public final class SectionStore {
         return change
     }
 
-    /// Applies structural changes before accepting the new instances and order.
+    /// Awaits one application-defined submission before accepting instances and order.
     ///
-    /// `apply` runs only when membership or order changes. After it succeeds, the store
-    /// accepts that membership and returns the change. The caller can then submit retained
-    /// sections' content through the orchestrator or the sections' own update methods.
+    /// `apply` runs for every valid reconciliation, including content-only changes.
+    /// Use it to compose the target controllers and select which retained content to update.
+    /// After it succeeds, the store accepts that membership and returns the change.
     ///
     /// On error (including cancellation thrown by `apply`), membership and order remain
     /// unchanged. Retained controllers have already received their inputs: their business
-    /// state and callback side effects are not rolled back. This is not a display transaction.
+    /// state and callback side effects are not rolled back.
     @discardableResult
     public func reconcile(
         _ definitions: [SectionDefinition],
         apply: @MainActor (Change) async throws -> Void
     ) async throws -> Change {
         let change = try resolve(definitions)
-        if change.hasStructuralChanges {
-            try await apply(change)
-        }
+        try await apply(change)
         accept(change)
         return change
     }

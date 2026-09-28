@@ -33,7 +33,7 @@ public final class IMExampleViewController: UIViewController {
             primaryAction: UIAction { [weak self] _ in self?.receiveMessage() }
         )
         Task {
-            do { try await orchestrator.setSections(sections, animated: false) }
+            do { try await orchestrator.compose(sections).apply(animated: false) }
             catch { navigationItem.prompt = String(describing: error) }
         }
     }
@@ -75,7 +75,7 @@ public final class AppStoreExampleViewController: UIViewController {
         title = "Discover"
         installCollectionView(collectionView, in: view)
         Task {
-            do { try await orchestrator.setSections(sections, animated: false) }
+            do { try await orchestrator.compose(sections).apply(animated: false) }
             catch { navigationItem.prompt = String(describing: error) }
         }
     }
@@ -117,7 +117,7 @@ public final class AppStoreExampleViewController: UIViewController {
             page.installedIds.insert(appId)
             for section in sections { section.installedIds = page.installedIds }
             Task {
-                do { try await orchestrator.update(sections) }
+                do { try await orchestrator.update(sections).apply() }
                 catch { navigationItem.prompt = String(describing: error) }
             }
         }

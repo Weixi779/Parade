@@ -1,5 +1,33 @@
 # Verification
 
+## Composable collection updates — 2026-09-28
+
+Collection calls now describe a change with `compose` / `update`, optionally add
+content selections with `updating`, and submit through `apply`. Section-owned
+`update()` remains immediate. Async store reconciliation always reaches its apply
+callback and accepts membership only after that callback succeeds.
+
+The complete suite passed **133 tests in 12 suites** in 14.825 seconds on
+Xcode 27.0 / iOS 27.0. The final result bundle is
+`/private/tmp/ParadeChainFinal-20260928.xcresult`.
+
+New coverage checks inert descriptions, fresh capture on repeated apply, independent
+description copies, accumulating/deduplicated selections, a cell transfer into a new
+section combined with content and order changes, queued capture versus the latest
+unselected baseline, selection by instance identity, failure/retry without attachment
+leaks, and diagnostics at the correct target section position. Combined transfers run
+through both data sources in `.diff` and `.reload` modes. Store integration checks now
+exercise unified content-only and structural submissions through the public API.
+Existing lifecycle, stale-generation, reservation, reentrancy and queue tests also pass.
+
+Standalone public-API examples compiled targeting iOS 16 Simulator, and all **10 UI
+smoke checks** passed on iOS 27, including shared install-state updates across Store
+sections. The report is `Documents/smoke.json` in the example app's data container.
+These checks do not establish iOS 16 runtime behavior, minimum-toolchain compatibility,
+real-device performance, or all animated visual transitions. Existing UIKit observation
+feedback diagnostics, the weak-variable compiler warning and the example linker sysroot
+warning remain; no check failed.
+
 ## Section controller naming — 2026-09-28
 
 Renamed `SectionPresenter` to `SectionController`, its `updates` property to
