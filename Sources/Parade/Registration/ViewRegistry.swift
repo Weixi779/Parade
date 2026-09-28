@@ -85,7 +85,7 @@ final class ViewRegistry {
             for: indexPath
         )
         presenter.configure(view)
-        presenter.setBehaviors(view)
+        presenter.bind(to: view)
         return view
     }
 
@@ -98,7 +98,7 @@ final class ViewRegistry {
         }
         let native = UICollectionView.CellRegistration<Cell, AnyCellPresenter> { cell, _, current in
             current.configure(cell)
-            current.setBehaviors(cell)
+            current.bind(to: cell)
         }
         cellRegistrations[key] = native
         return native

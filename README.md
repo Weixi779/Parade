@@ -14,6 +14,8 @@ updates. The development API documented below uses `SectionController`,
 `SectionPresenter`, `updates`, and `presenters`.
 See the [unreleased naming migration](CHANGELOG.md#section-controller-naming) and
 the [0.3 content/snapshot migration](CHANGELOG.md#api-naming-changes) when upgrading.
+For the first application integration, the [Podcast migration handoff](Docs/PodcastMigration.md)
+records required changes, concrete simplifications, and pending consumer checks.
 
 ## Requirements
 
@@ -173,7 +175,7 @@ Display observation has two independent, opt-in levels:
 | `SectionDisplayObserving` | `sectionWillDisplay()` / `sectionDidEndDisplaying()` | This attached section has at least one displayed cell or supplementary view in a visible collection. |
 
 The application supplies whole-collection visibility through
-`orchestrator.setVisible(_:)`, for example when a screen, child controller, or embedded
+`orchestrator.isVisible`, for example when a screen, child controller, or embedded
 component appears or disappears. It defaults to false. Parade derives section display
 from actual view display cycles; prepared views do not count, and supplementary-only
 sections are supported. Cell and supplementary callbacks remain independent.
@@ -223,10 +225,10 @@ is synchronous. Presenter erasers are not Sendable; Parade does not schedule
 background work or assume a runtime actor for nonisolated values.
 
 Put replaceable button actions
-and other closures in `setBehaviors(_:)`; Parade refreshes them even when content
+and other closures in `bind(to:)`; Parade refreshes them even when content
 compares equal. A same-Id change of view registration replaces the view safely.
 Presenters sharing a view type must overwrite or clear bindings they own, including
-setting an unused action to `nil`. The default `setBehaviors` implementation does
+setting an unused action to `nil`. The default `bind(to:)` implementation does
 not clear actions installed by a previous presenter.
 
 Cell interaction and visibility are opt-in capabilities. Keep a static presenter

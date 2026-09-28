@@ -39,7 +39,7 @@ public struct AnySupplementaryPresenter: DiffableElement {
     }
 
     @MainActor
-    func setBehaviors(_ view: UICollectionReusableView) {
-        underlyingPresenter.setBehaviorsErased(view)
+    func bind(to view: UICollectionReusableView) {
+        underlyingPresenter.bindErased(to: view)
     }
 }

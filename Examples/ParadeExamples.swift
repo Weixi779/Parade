@@ -468,7 +468,7 @@ private struct TextMessagePresenter: CellPresenter, CellSelectionHandling {
         cell.actionButton.setTitle(expanded ? "Collapse" : "Expand", for: .normal)
     }
 
-    func setBehaviors(_ cell: TextMessageCell) { cell.onAction = toggle }
+    func bind(to cell: TextMessageCell) { cell.onAction = toggle }
     func didSelect(_ cell: TextMessageCell) { toggle() }
 }
 
@@ -509,7 +509,7 @@ private struct FeaturedCellPresenter: CellPresenter, CellSelectionHandling {
         cell.contentView.backgroundColor = .secondarySystemGroupedBackground
     }
 
-    func setBehaviors(_ cell: FeaturedCardCell) { cell.onAction = install }
+    func bind(to cell: FeaturedCardCell) { cell.onAction = install }
     func didSelect(_ cell: FeaturedCardCell) { open() }
 }
 
@@ -531,7 +531,7 @@ private struct RankingCellPresenter: CellPresenter, CellSelectionHandling {
         cell.actionButton.setTitle(installed ? "Open" : "Get", for: .normal)
     }
 
-    func setBehaviors(_ cell: RankingCell) { cell.onAction = install }
+    func bind(to cell: RankingCell) { cell.onAction = install }
     func didSelect(_ cell: RankingCell) { open() }
 }
 
@@ -552,7 +552,7 @@ private struct RecommendationCellPresenter: CellPresenter, CellSelectionHandling
         cell.actionButton.setTitle(installed ? "Open" : "Get", for: .normal)
     }
 
-    func setBehaviors(_ cell: RecommendationCell) { cell.onAction = install }
+    func bind(to cell: RecommendationCell) { cell.onAction = install }
     func didSelect(_ cell: RecommendationCell) { open() }
 }
 
@@ -598,7 +598,7 @@ private class ExampleActionCell: UICollectionViewCell {
             row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
             row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
         ])
-        // Install the UIKit action once. setBehaviors replaces only onAction.
+        // Install the UIKit action once. bind(to:) replaces only onAction.
         actionButton.addAction(UIAction { [weak self] _ in self?.onAction?() }, for: .touchUpInside)
     }
 

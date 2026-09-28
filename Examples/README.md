@@ -97,7 +97,7 @@ content changes in the same submission. Section-local `update()` stays unchanged
 
 The same app appears in several Store sections. Its domain ID is shared, while
 `StoreOccurrenceId(section:appId:)` identifies each cell occurrence. Cell presenters
-remain immutable display values; `configure` writes visual content and `setBehaviors`
+remain immutable display values; `configure` writes visual content and `bind(to:)`
 replaces actions. The section lifetime is independent of cell reuse.
 
 These are local UI demonstrations. Network requests, real media playback, keyboard

@@ -23,14 +23,14 @@ public protocol SupplementaryPresenter: DiffableElement {
     /// Replace bindings even when visual content is equal. Presenters sharing a
     /// view type must overwrite or clear bindings they own; the default no-op
     /// does not remove actions installed by a previous presenter.
-    @MainActor func setBehaviors(_ view: View)
+    @MainActor func bind(to view: View)
 }
 
 public extension SupplementaryPresenter {
     @MainActor static var headerKind: String { UICollectionView.elementKindSectionHeader }
     @MainActor static var footerKind: String { UICollectionView.elementKindSectionFooter }
     var itemIndex: Int { 0 }
-    func setBehaviors(_ view: View) {}
+    func bind(to view: View) {}
 }
 
 @MainActor
@@ -40,8 +40,8 @@ extension SupplementaryPresenter {
         configure(view)
     }
 
-    func setBehaviorsErased(_ rawView: UICollectionReusableView) {
+    func bindErased(to rawView: UICollectionReusableView) {
         guard let view = rawView as? View else { return }
-        setBehaviors(view)
+        bind(to: view)
     }
 }

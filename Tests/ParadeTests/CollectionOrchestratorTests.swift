@@ -592,7 +592,7 @@ private struct TextPresenter: CellPresenter, CellSelectionHandling {
         cell.configurations += 1
     }
 
-    func setBehaviors(_ cell: TextCell) { cell.action = { events?.actions.append(action) } }
+    func bind(to cell: TextCell) { cell.action = { events?.actions.append(action) } }
     func didSelect(_ cell: TextCell) { events?.actions.append("selected:\(action)") }
 }
 
@@ -633,7 +633,7 @@ private struct HeaderPresenter: SupplementaryPresenter {
     var elementKind: String { Self.headerKind }
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.text == rhs.text }
     func configure(_ view: HeaderView) { view.label.text = text }
-    func setBehaviors(_ view: HeaderView) { view.action = { events?.actions.append(action) } }
+    func bind(to view: HeaderView) { view.action = { events?.actions.append(action) } }
 }
 
 @MainActor

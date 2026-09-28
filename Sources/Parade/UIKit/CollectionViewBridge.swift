@@ -441,7 +441,7 @@ private extension CollectionViewBridge {
             if !displayed.isEmpty {
                 displayed[displayed.count - 1].sectionDisplayIdentity = sectionDisplayIdentity
             }
-            presenter.setBehaviors(view)
+            presenter.bind(to: view)
         }
 
         func prepareForDisplay(
@@ -460,7 +460,7 @@ private extension CollectionViewBridge {
             let needsConfiguration = previous.presenter != presenter
             updateBinding(binding)
             if needsConfiguration { presenter.configure(view) }
-            presenter.setBehaviors(view)
+            presenter.bind(to: view)
             // Keep this callback's binding even if configuration reenters the bridge.
             return binding
         }
@@ -550,7 +550,7 @@ private extension CollectionViewBridge {
             if !displayed.isEmpty {
                 displayed[displayed.count - 1].sectionDisplayIdentity = sectionDisplayIdentity
             }
-            presenter.setBehaviors(view)
+            presenter.bind(to: view)
         }
 
         func prepareForDisplay(
@@ -568,7 +568,7 @@ private extension CollectionViewBridge {
             let needsConfiguration = previous.presenter != presenter
             updateBinding(binding)
             if needsConfiguration { presenter.configure(view) }
-            presenter.setBehaviors(view)
+            presenter.bind(to: view)
             return binding
         }
 

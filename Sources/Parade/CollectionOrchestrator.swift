@@ -22,7 +22,6 @@ public final class CollectionOrchestrator {
     /// Receives recoverable problems after display state has settled and outside
     /// UIKit data-source callbacks. Submitting another update here is safe.
     public var onDiagnostic: (@MainActor (CollectionDiagnostic) -> Void)?
-    public var logger: (@MainActor (String) -> Void)?
 
     /// Optional whole-collection empty content. Header-only sections are not empty.
     /// This never changes scrolling or refresh-control behavior.
@@ -38,17 +37,16 @@ public final class CollectionOrchestrator {
 
     /// The collection's visibility as reported by the application.
     /// Independent from individual cell display and app activity.
-    public private(set) var isVisible = false
-
-    /// Immediately notifies attached modules, including during a content update.
+    /// Changes immediately notify attached modules, including during a content update.
     /// Newly attached modules begin displaying after their update settles if visible.
     /// Section display additionally requires a displayed cell or supplementary view.
-    public func setVisible(_ isVisible: Bool) {
-        guard self.isVisible != isVisible else { return }
-        self.isVisible = isVisible
-        for member in members.values {
-            // A callback can change visibility again; use the latest value.
-            member.setVisible(self.isVisible)
+    public var isVisible = false {
+        didSet {
+            guard oldValue != isVisible else { return }
+            for member in members.values {
+                // A callback can change visibility again; use the latest value.
+                member.setVisible(isVisible)
+            }
         }
     }
 
@@ -417,7 +415,6 @@ public final class CollectionOrchestrator {
         bridge.refreshVisibleBehaviors()
         collectionView.layoutIfNeeded()
         for diagnostic in recovered { report(diagnostic) }
-        logger?("Applied collection update: \(numberOfSections) sections, \(numberOfItems) cells")
     }
 
     /// Bridge diagnostics must not call application code from within dequeue.
@@ -440,7 +437,6 @@ public final class CollectionOrchestrator {
         let pending = diagnostics
         diagnostics.removeAll()
         for diagnostic in pending {
-            logger?("Collection diagnostic: \(diagnostic)")
             onDiagnostic?(diagnostic)
         }
     }

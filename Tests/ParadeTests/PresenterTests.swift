@@ -44,10 +44,10 @@ struct PresenterTests {
         ))
 
         first.configure(cell)
-        first.setBehaviors(cell)
+        first.bind(to: cell)
         cell.onTap?()
         #expect(first == next)
-        next.setBehaviors(cell)
+        next.bind(to: cell)
         cell.onTap?()
 
         #expect(received == ["first", "next"])
@@ -69,7 +69,7 @@ struct PresenterTests {
         #expect(dispatchCapabilities(of: erased, to: cell) != nil)
 
         erased.configure(incompatible)
-        erased.setBehaviors(incompatible)
+        erased.bind(to: incompatible)
         #expect(dispatchCapabilities(of: erased, to: incompatible) == nil)
         #expect(cell.text == "Hello")
         #expect(events == [
@@ -262,7 +262,7 @@ struct PresenterTests {
         #expect(header.registrationKey != footer.registrationKey)
         #expect(header == changedBehavior)
         header.configure(view)
-        changedBehavior.setBehaviors(view)
+        changedBehavior.bind(to: view)
         view.onTap?()
         #expect(view.title == "Title")
         #expect(result == "new")
@@ -294,7 +294,7 @@ private struct TextPresenter: CellPresenter,
         cell.configureCount += 1
     }
 
-    func setBehaviors(_ cell: TextCell) { cell.onTap = onTap }
+    func bind(to cell: TextCell) { cell.onTap = onTap }
     func didSelect(_ cell: TextCell) { onEvent("select") }
     func didDeselect(_ cell: TextCell) { onEvent("deselect") }
     func didHighlight(_ cell: TextCell) { onEvent("highlight") }
@@ -478,7 +478,7 @@ private struct HeaderPresenter: SupplementaryPresenter {
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.title == rhs.title }
     func configure(_ view: HeaderView) { view.title = title }
-    func setBehaviors(_ view: HeaderView) { view.onTap = onTap }
+    func bind(to view: HeaderView) { view.onTap = onTap }
 }
 
 @MainActor

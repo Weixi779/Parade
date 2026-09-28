@@ -25,7 +25,7 @@ struct SupplementaryPresenterTests {
         observer.dispatchDidEndDisplaying(to: view)
         let incompatible = UICollectionReusableView(frame: .zero)
         erased.configure(incompatible)
-        erased.setBehaviors(incompatible)
+        erased.bind(to: incompatible)
         observer.dispatchWillDisplay(to: incompatible)
         observer.dispatchDidEndDisplaying(to: incompatible)
 

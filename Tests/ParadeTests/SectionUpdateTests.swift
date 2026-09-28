@@ -458,15 +458,15 @@ struct SectionUpdateTests {
         let b = Section("b", items: [2])
         try await fixture.owner.compose([a, b]).apply(animated: false)
         #expect(a.events == [.attach])
-        fixture.owner.setVisible(true)
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
+        fixture.owner.isVisible = true
         let events = a.events
         try await fixture.owner.compose([b, a]).apply(animated: false)
         try await a.update(animated: false)
         #expect(a.events == events)
         try await fixture.owner.compose([b]).apply(animated: false)
         #expect(a.events == events + [.visibility(false), .detach])
-        fixture.owner.setVisible(false)
+        fixture.owner.isVisible = false
         #expect(a.events == events + [.visibility(false), .detach])
         try await fixture.owner.compose([a, b]).apply(animated: false)
         #expect(a.events.suffix(1) == [.attach])
@@ -479,14 +479,14 @@ struct SectionUpdateTests {
         defer { fixture.close() }
         let a = Section("a", items: [1])
         let b = Section("b", items: [2])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([a]).apply(animated: false)
         #expect(a.events == [.attach, .visibility(true)])
         let gate = Gate()
         fixture.source.gate = gate
         let attachment = Task { try await fixture.owner.compose([a, b]).apply(animated: false) }
         await gate.waitUntilStarted()
-        fixture.owner.setVisible(false)
+        fixture.owner.isVisible = false
         #expect(a.events.last == .visibility(false))
         #expect(b.events.isEmpty)
         gate.release()
@@ -501,7 +501,7 @@ struct SectionUpdateTests {
         let old = Section("a", items: [1])
         let replacement = Section("a", items: [2])
         let invalid = Section("invalid", items: [2])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([old]).apply(animated: false)
         await #expect(throws: CollectionUpdateError.duplicateCellId("2")) {
             try await fixture.owner.compose([replacement, invalid]).apply(animated: false)
@@ -523,10 +523,10 @@ struct SectionUpdateTests {
         try await fixture.owner.compose(sections).apply(animated: false)
         for section in sections {
             section.onVisibility = { [weak owner = fixture.owner] visible in
-                if visible { owner?.setVisible(false) }
+                if visible { owner?.isVisible = false }
             }
         }
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         #expect(!fixture.owner.isVisible)
         for section in sections {
             #expect(section.events == [.attach] || section.events == [.attach, .visibility(true), .visibility(false)])
@@ -541,7 +541,7 @@ struct SectionUpdateTests {
         let b = Section("b", items: [2])
         var update: Task<Void, any Error>?
         a.onAttach = { [weak owner = fixture.owner, weak a] in
-            owner?.setVisible(true)
+            owner?.isVisible = true
             #expect(a?.events == [.attach])
             update = Task {
                 guard let a else { return }
@@ -571,7 +571,7 @@ struct SectionUpdateTests {
         section.onDetach = { detached.send() }
         var owner: CollectionOrchestrator? = CollectionOrchestrator(collectionView: view)
         weak var weakOwner = owner
-        owner?.setVisible(true)
+        owner?.isVisible = true
         try await owner?.compose([section]).apply(animated: false)
         #expect(section.sectionDisplayEvents == [true])
         owner = nil
@@ -591,7 +591,7 @@ struct SectionUpdateTests {
         let bottom = Section("bottom", items: [2])
         try await fixture.owner.compose([top, bottom]).apply(animated: false)
         #expect(top.sectionDisplayEvents.isEmpty)
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         #expect(top.sectionDisplayEvents == [true])
         #expect(bottom.events == [.attach, .visibility(true)])
         #expect(bottom.sectionDisplayEvents.isEmpty)
@@ -601,10 +601,10 @@ struct SectionUpdateTests {
         #expect(top.sectionDisplayEvents == [true, false])
         #expect(bottom.sectionDisplayEvents == [true])
         #expect(bottom.events == [.attach, .visibility(true)])
-        fixture.owner.setVisible(false)
-        fixture.owner.setVisible(false)
+        fixture.owner.isVisible = false
+        fixture.owner.isVisible = false
         #expect(bottom.sectionDisplayEvents == [true, false])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         #expect(top.sectionDisplayEvents == [true, false])
         #expect(bottom.sectionDisplayEvents == [true, false, true])
     }
@@ -614,7 +614,7 @@ struct SectionUpdateTests {
         let fixture = Fixture(native: native)
         defer { fixture.close() }
         let section = Section("a", items: [1, 2])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([section]).apply(animated: false)
         let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
         let firstPath = IndexPath(item: 0, section: 0)
@@ -626,8 +626,8 @@ struct SectionUpdateTests {
         #expect(section.sectionDisplayEvents == [true])
         bridge.collectionView(fixture.view, didEndDisplaying: last, forItemAt: lastPath)
         #expect(section.sectionDisplayEvents == [true, false])
-        fixture.owner.setVisible(false)
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = false
+        fixture.owner.isVisible = true
         #expect(section.sectionDisplayEvents == [true, false])
         bridge.collectionView(fixture.view, willDisplay: first, forItemAt: firstPath)
         bridge.collectionView(fixture.view, willDisplay: last, forItemAt: lastPath)
@@ -640,7 +640,7 @@ struct SectionUpdateTests {
         defer { fixture.close() }
         let section = Section("a", items: hasCells ? [1] : [])
         section.hasHeader = true
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([section]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let kind = UICollectionView.elementKindSectionHeader
@@ -664,7 +664,7 @@ struct SectionUpdateTests {
         defer { fixture.close() }
         let a = Section("a", items: [1])
         let b = Section("b", items: [])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([a, b]).apply(animated: false)
         try await fixture.owner.compose([b, a]).apply(animated: false)
         a.height = 96
@@ -685,7 +685,7 @@ struct SectionUpdateTests {
         defer { fixture.close() }
         let old = Section("a", items: [1])
         let replacement = Section("a", items: [2])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([old]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let cell = try #require(fixture.view.cellForItem(at: path))
@@ -709,7 +709,7 @@ struct SectionUpdateTests {
         defer { fixture.close() }
         let old = Section("a", items: [1])
         let replacement = Section("a", items: [1])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([old]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let cell = try #require(fixture.view.cellForItem(at: path))
@@ -727,19 +727,19 @@ struct SectionUpdateTests {
         let fixture = Fixture(native: native)
         defer { fixture.close() }
         let section = Section("a", items: [1])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         try await fixture.owner.compose([section]).apply(animated: false)
         let gate = Gate()
         fixture.source.gate = gate
         section.items = [2]
         let update = Task { try await section.update(animated: false) }
         await gate.waitUntilStarted()
-        fixture.owner.setVisible(false)
+        fixture.owner.isVisible = false
         #expect(section.sectionDisplayEvents == [true, false])
         gate.release()
         try await update.value
         #expect(section.sectionDisplayEvents == [true, false])
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         #expect(section.sectionDisplayEvents == [true, false, true])
     }
 
@@ -751,11 +751,11 @@ struct SectionUpdateTests {
         try await fixture.owner.compose([section]).apply(animated: false)
         section.onSectionDisplay = { [weak owner = fixture.owner, weak section] visible in
             if visible {
-                owner?.setVisible(false)
+                owner?.isVisible = false
                 #expect(section?.displayOrder.last == "section.begin")
             }
         }
-        fixture.owner.setVisible(true)
+        fixture.owner.isVisible = true
         #expect(section.displayOrder == ["attach", "collection.begin", "section.begin", "section.end", "collection.end"])
         #expect(!fixture.owner.isVisible)
     }

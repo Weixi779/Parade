@@ -80,7 +80,7 @@ continues to support compositional layouts only.
 - `SectionAttachmentObserving` reports successful attachment and detachment after
   the update context is connected or disconnected. Reordering, content updates and
   rejected submissions do not create attachment transitions.
-- Applications report containing-component visibility through `setVisible(_:)`,
+- Applications report containing-component visibility through `isVisible`,
   initially false. `CollectionDisplayObserving` follows it for every attached section,
   including offscreen sections. Visibility changes take effect during pending updates.
 - `SectionDisplayObserving` additionally requires at least one displayed cell or

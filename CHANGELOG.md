@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+The [Podcast migration handoff](Docs/PodcastMigration.md) maps these changes to
+current application call sites and distinguishes available simplifications from
+framework proposals and consumer behavior that still needs verification.
+
+### Visibility, bindings, and logging
+
+| Previous API | Replacement |
+| --- | --- |
+| `orchestrator.setVisible(true)` | `orchestrator.isVisible = true` |
+| `setBehaviors(_:)` on cell and supplementary presenters | `bind(to:)` |
+| `orchestrator.logger` | `onDiagnostic` for problems; `onDidApply` for successful submissions |
+
+Visibility assignments retain the existing transition and reentrancy behavior.
+`bind(to:)` replaces behavior bindings even when visual content compares equal;
+implementations must overwrite or clear the bindings they own. The old names are
+removed without aliases.
+
+Rename presenter method implementations as well as their call sites. Because
+`bind(to:)` has a default no-op implementation, an old `setBehaviors(_:)` method
+can still compile as an ordinary method while no longer receiving Parade callbacks.
+
+Connect logging directly to the existing callbacks, formatting messages in the app:
+
+```swift
+orchestrator.onDiagnostic = { diagnostic in
+    print("Collection diagnostic: \(diagnostic)")
+}
+orchestrator.onDidApply = { collection in
+    print("Applied: \(collection.numberOfSections) sections, \(collection.numberOfItems) cells")
+}
+```
+
+If the application already uses either callback, include its logging there rather
+than replacing the existing handler. `onDidApply` runs after the full submission
+settles; the removed success log ran earlier, after the data-source and binding work.
+
 ### Section controller naming
 
 Stable section owners are now named controllers, distinguishing their business

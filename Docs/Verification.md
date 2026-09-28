@@ -1,5 +1,26 @@
 # Verification
 
+## Public visibility and binding API — 2026-10-02
+
+Collection visibility is now assigned through `isVisible`; cell and supplementary
+behavior bindings use `bind(to:)`. The string logger was removed; diagnostics and
+successful submissions remain observable through `onDiagnostic` and `onDidApply`.
+
+The complete suite passed **133 tests in 12 suites** in 15.061 seconds on
+Xcode 27.0 / iOS 27.0. The result bundle is
+`/private/tmp/ParadePublicAPI-20261002.xcresult`.
+
+Existing tests cover repeated and reentrant visibility changes, collection and
+section display ordering, equal-content behavior replacement, both built-in data
+sources, and public-import implementations of a separate data source and diff
+algorithm. The standalone public-API examples also compiled targeting iOS 16
+Simulator. No new tests were added for the mechanical API migration.
+
+This run did not repeat the example UI smoke checks or validate iOS 16 runtime,
+minimum-toolchain compatibility, or real-device behavior. Existing UIKit observation
+feedback diagnostics and the standalone example's linker sysroot warning remain;
+no check failed.
+
 ## Composable collection updates — 2026-09-28
 
 Collection calls now describe a change with `compose` / `update`, optionally add

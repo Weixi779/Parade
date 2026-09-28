@@ -24,11 +24,11 @@ public protocol CellPresenter: DiffableElement {
     /// should replace their own bindings rather than append duplicate targets.
     /// Presenters sharing a cell type must overwrite or clear bindings they own;
     /// the default no-op does not remove actions installed by a previous presenter.
-    @MainActor func setBehaviors(_ cell: Cell)
+    @MainActor func bind(to cell: Cell)
 }
 
 public extension CellPresenter {
-    func setBehaviors(_ cell: Cell) {}
+    func bind(to cell: Cell) {}
 }
 
 @MainActor
@@ -38,8 +38,8 @@ extension CellPresenter {
         configure(cell)
     }
 
-    func setBehaviorsErased(_ rawCell: UICollectionViewCell) {
+    func bindErased(to rawCell: UICollectionViewCell) {
         guard let cell = rawCell as? Cell else { return }
-        setBehaviors(cell)
+        bind(to: cell)
     }
 }

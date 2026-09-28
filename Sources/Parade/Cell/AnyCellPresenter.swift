@@ -33,7 +33,7 @@ public struct AnyCellPresenter: DiffableElement {
     }
 
     @MainActor
-    func setBehaviors(_ cell: UICollectionViewCell) {
-        underlyingPresenter.setBehaviorsErased(cell)
+    func bind(to cell: UICollectionViewCell) {
+        underlyingPresenter.bindErased(to: cell)
     }
 }

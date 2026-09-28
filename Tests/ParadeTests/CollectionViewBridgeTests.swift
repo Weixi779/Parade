@@ -822,7 +822,7 @@ private struct ActionPresenter: CellPresenter,
         onConfigure?(cell)
     }
 
-    func setBehaviors(_ cell: ActionCell) { cell.action = { events.actions.append(token) } }
+    func bind(to cell: ActionCell) { cell.action = { events.actions.append(token) } }
     func didSelect(_ cell: ActionCell) { events.selected.append(token) }
     func willDisplay(_ cell: ActionCell) { events.started.append(token) }
     func didEndDisplaying(_ cell: ActionCell) { events.ended.append(token) }
@@ -832,7 +832,7 @@ private struct StaticPresenter: CellPresenter {
     let id: String
     static func == (lhs: Self, rhs: Self) -> Bool { true }
     func configure(_ cell: ActionCell) { cell.content = "Static" }
-    func setBehaviors(_ cell: ActionCell) { cell.action = nil }
+    func bind(to cell: ActionCell) { cell.action = nil }
 }
 
 @MainActor
@@ -906,7 +906,7 @@ private struct Header: SupplementaryPresenter, SupplementaryDisplayObserving {
         view.content = content
     }
 
-    func setBehaviors(_ view: ActionHeader) { view.action = { events.actions.append(token ?? id) } }
+    func bind(to view: ActionHeader) { view.action = { events.actions.append(token ?? id) } }
     func willDisplay(_ view: ActionHeader) { events.started.append(token ?? id) }
     func didEndDisplaying(_ view: ActionHeader) { events.ended.append(token ?? id) }
 }
@@ -916,7 +916,7 @@ private struct StaticHeader: SupplementaryPresenter {
     var elementKind: String { Self.headerKind }
     static func == (lhs: Self, rhs: Self) -> Bool { true }
     func configure(_ view: ActionHeader) { view.content = "Static" }
-    func setBehaviors(_ view: ActionHeader) { view.action = nil }
+    func bind(to view: ActionHeader) { view.action = nil }
 }
 
 @MainActor

@@ -169,7 +169,7 @@ identity constraints without declaring erased presenters or AnyHashable Sendable
 Same identity and different registration means replacement. Same registration and
 changed content means reconfiguration. Equal content still installs current behavior
 closures; do not include action closures in content equality merely to force this.
-`setBehaviors` should replace bindings rather than append new targets on each update.
+`bind(to:)` should replace bindings rather than append new targets on each update.
 When presenters share a view type, each must overwrite or clear the bindings it
 owns. A default no-op does not remove previously installed actions. Behavior binding
 therefore remains a base requirement with explicit cleanup responsibility.
@@ -406,7 +406,7 @@ validate or apply an intermediate membership-only target. Neither validation fai
 commits a target or reserves new contexts.
 
 `CollectionDiagnostic` carries a reason, recovery action and, for invalid input,
-the relevant positions. `onDiagnostic` and the diagnostic logger run after active
+the relevant positions. `onDiagnostic` runs after active
 submission state settles. Diagnostics raised in UIKit data-source callbacks are
 buffered, so the application can submit again without reentering a dequeue. A
 successful reload recovery produces a diagnostic and successful completion; it is
@@ -428,7 +428,7 @@ cell construction, configuration or event callbacks.
 | Project | Relevant design lesson | Parade choice |
 | --- | --- | --- |
 | [ReactiveCollectionsKit](https://github.com/jessesquires/ReactiveCollectionsKit) | Typed cell/supplementary models assembled by section, central driver | Keep these roles as presenters with our own update backend |
-| [Epoxy](https://github.com/airbnb/epoxy-ios/blob/master/Sources/EpoxyCollectionView/Models/ItemModel/AnyItemModel.swift) | Separate content configuration and behavior binding | Explicit `configure` and `setBehaviors` |
+| [Epoxy](https://github.com/airbnb/epoxy-ios/blob/master/Sources/EpoxyCollectionView/Models/ItemModel/AnyItemModel.swift) | Separate content configuration and behavior binding | Explicit `configure` and `bind(to:)` |
 | [Carbon](https://github.com/ra1028/Carbon/blob/master/Sources/Updaters/UICollectionViewUpdater.swift) | Its empty-diff path still installs data and can render visible components | No-op visual content cannot suppress new actions |
 | [ComposedUI](https://github.com/composed-swift/ComposedUI) | Sections compose typed configuration and optional interaction capabilities | First-class section protocol; app still composes state |
 | [Listable](https://github.com/square/Listable/blob/main/ListableUI/Sources/Item/ItemContentCoordinator.swift) | Entity callbacks and view visibility callbacks are distinct | Display callbacks have no implied business/task lifetime |
@@ -466,7 +466,7 @@ queued updates. A context is reserved before UIKit starts, preventing simultaneo
 attachment to two collections during suspension.
 
 Sections opt into attachment, collection display, and section display observation
-independently. The application reports collection visibility with `setVisible(_:)`;
+independently. The application reports collection visibility with `isVisible`;
 the bridge derives section display from active cell and supplementary display cycles.
 Prepared views do not count. Bindings carry a separate attachment identity so a late
 callback cannot change the visibility of a replacement with the same business ID.
