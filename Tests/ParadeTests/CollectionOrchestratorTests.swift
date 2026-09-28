@@ -528,8 +528,8 @@ private func textSection(_ id: String, _ items: [Int]) -> TestSection {
 }
 
 @MainActor
-private final class TestSection: SectionPresenter {
-    let updates = SectionUpdateContext()
+private final class TestSection: SectionController {
+    let updateContext = SectionUpdateContext()
     let id: String
     var cells: [AnyCellPresenter]
     var supplementaryViews: [AnySupplementaryPresenter]
@@ -546,8 +546,8 @@ private final class TestSection: SectionPresenter {
 }
 
 @MainActor
-private final class MutableSection: SectionPresenter {
-    let updates = SectionUpdateContext()
+private final class MutableSection: SectionController {
+    let updateContext = SectionUpdateContext()
     func captureContent() -> DefaultSectionContent { testSectionContent(cells: cells) }
     let id: String
     var cells: [AnyCellPresenter]

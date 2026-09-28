@@ -1,5 +1,21 @@
 # Verification
 
+## Section controller naming — 2026-09-28
+
+Renamed `SectionPresenter` to `SectionController`, its `updates` property to
+`updateContext`, and section-store `presenters` accessors to `controllers`.
+Section-related generic parameters, examples, and tests use the same terminology.
+Submission methods, public access levels, and runtime behavior remain unchanged.
+
+The complete suite passed **126 tests in 12 suites** in 14.751 seconds on
+Xcode 27.0 / iOS 27.0. The result bundle is
+`/private/tmp/ParadeControllerNaming-20260928.xcresult`. The standalone examples
+compiled against the public API, targeting iOS 16 Simulator. This run did not repeat
+the example UI smoke checks or verify older-runtime and real-device behavior.
+
+The test log includes UIKit observation-tracking feedback-loop diagnostics; no test
+failed. The standalone example build emitted the existing linker sysroot warning.
+
 ## 0.3.0 release review — 2026-09-23
 
 Reviewed the complete change from 0.2.0: public API renaming, section reconciliation,

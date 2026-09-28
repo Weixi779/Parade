@@ -5,19 +5,19 @@ import Foundation
 /// A stable business module corresponding to one UICollectionView section.
 /// Own requests and listeners here; submit immutable display versions with update().
 @MainActor
-public protocol SectionPresenter: AnyObject {
+public protocol SectionController: AnyObject {
     associatedtype Id: Hashable
     associatedtype Content: SectionContent
 
     var id: Id { get }
-    var updates: SectionUpdateContext { get }
+    var updateContext: SectionUpdateContext { get }
     func captureContent() -> Content
 }
 
-public extension SectionPresenter {
+public extension SectionController {
     /// Captures now, then awaits this operation's content, layout and binding updates.
     func update(animated: Bool = true, mode: CollectionUpdateMode = .diff) async throws {
-        try await updates.update(animated: animated, mode: mode)
+        try await updateContext.update(animated: animated, mode: mode)
     }
 }
 

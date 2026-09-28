@@ -6,27 +6,27 @@ import Foundation
 ///
 /// Retain one store for the composition it owns. The store creates, updates, reorders,
 /// and releases its instances; it does not capture presentations, attach sections,
-/// or submit UIKit updates. Applications may also manage presenters directly without a store.
+/// or submit UIKit updates. Applications may also manage controllers directly without a store.
 ///
 /// Serialize reconciliations, including across suspension in `reconcile(_:apply:)`.
 /// Neither definition closures nor the apply callback may reenter this store.
 @MainActor
 public final class SectionStore {
     /// Instance membership for one reconciliation, not an immutable display snapshot.
-    /// Keeping a change alive also retains its presenters, including removed instances.
+    /// Keeping a change alive also retains its controllers, including removed instances.
     @MainActor
     public struct Change {
         /// The complete target order, including new and retained instances.
-        public var presenters: [any SectionPresenter] {
-            instances.map(\.presenter)
+        public var controllers: [any SectionController] {
+            instances.map(\.controller)
         }
 
         /// Instances reused from the previous membership, in target order.
         /// Their business inputs have been updated; their presentations have not been submitted.
-        public let retained: [any SectionPresenter]
+        public let retained: [any SectionController]
 
         /// Instances absent from the target, in previous order. Includes same-ID replacements.
-        public let removed: [any SectionPresenter]
+        public let removed: [any SectionController]
 
         /// Whether instance membership or order changed. Content changes alone do not set this.
         public let hasStructuralChanges: Bool
@@ -40,8 +40,8 @@ public final class SectionStore {
         orderedInstances.map(\.id)
     }
 
-    public var presenters: [any SectionPresenter] {
-        orderedInstances.map(\.presenter)
+    public var controllers: [any SectionController] {
+        orderedInstances.map(\.controller)
     }
 
     /// Accepts the resolved instances and order immediately, without submitting presentations.
@@ -61,7 +61,7 @@ public final class SectionStore {
     /// sections' content through the orchestrator or the sections' own update methods.
     ///
     /// On error (including cancellation thrown by `apply`), membership and order remain
-    /// unchanged. Retained presenters have already received their inputs: their business
+    /// unchanged. Retained controllers have already received their inputs: their business
     /// state and callback side effects are not rolled back. This is not a display transaction.
     @discardableResult
     public func reconcile(
@@ -85,13 +85,13 @@ public final class SectionStore {
         }
 
         let next = definitions.map { $0.resolve(instancesById[$0.id]) }
-        let previousIdentities = orderedInstances.map { ObjectIdentifier($0.presenter) }
-        let nextIdentities = next.map { ObjectIdentifier($0.presenter) }
+        let previousIdentities = orderedInstances.map { ObjectIdentifier($0.controller) }
+        let nextIdentities = next.map { ObjectIdentifier($0.controller) }
         let previous = Set(previousIdentities)
         let incoming = Set(nextIdentities)
         return Change(
-            retained: next.filter { previous.contains(ObjectIdentifier($0.presenter)) }.map(\.presenter),
-            removed: orderedInstances.filter { !incoming.contains(ObjectIdentifier($0.presenter)) }.map(\.presenter),
+            retained: next.filter { previous.contains(ObjectIdentifier($0.controller)) }.map(\.controller),
+            removed: orderedInstances.filter { !incoming.contains(ObjectIdentifier($0.controller)) }.map(\.controller),
             hasStructuralChanges: previousIdentities != nextIdentities,
             instances: next
         )

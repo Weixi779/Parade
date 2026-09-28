@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Section controller naming
+
+Stable section owners are now named controllers, distinguishing their business
+state and lifecycle from immutable cell and supplementary presenters.
+
+| Previous name | New name |
+| --- | --- |
+| `SectionPresenter` | `SectionController` |
+| `SectionPresenter.updates` | `SectionController.updateContext` |
+| `SectionStore.presenters` | `SectionStore.controllers` |
+| `SectionStore.Change.presenters` | `SectionStore.Change.controllers` |
+
+Update section conformances and store accessors to these names. `SectionDefinition`
+now calls its section type parameter `Controller`; creation and update closures
+retain the same signatures and behavior. Section examples use controller names.
+The old names are not retained as aliases. Content capture, reconciliation,
+attachment/display callbacks, layout, and submission behavior are unchanged.
+
 ## 0.3.0
 
 Optional section reconciliation preserves live module state across changing inputs.

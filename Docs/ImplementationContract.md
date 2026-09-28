@@ -1,14 +1,15 @@
 # Parade implementation contract
 
-This documents the 0.3 implementation (2026-09-23), including the API naming
-changes from 0.2 and the compositional-only section model introduced in 0.2.
+This documents the development API as of 2026-09-28, including the unreleased
+section-controller naming. Runtime behavior remains the 0.3 implementation,
+with the compositional-only section model introduced in 0.2.
 
 ## Ownership and public input
 
 - The application creates `UICollectionView`. `CollectionOrchestrator` installs its
   `UICollectionViewCompositionalLayout`, data source and delegate. There is no Flow
   forwarding or alternate-layout mode.
-- `SectionPresenter` is a MainActor reference-type protocol: stable `id`, one stable
+- `SectionController` is a MainActor reference-type protocol: stable `id`, one stable
   `SectionUpdateContext`, and `captureContent()` with an associated output type.
   A section may own business requests/listeners. Its instance maps to one UIKit section.
 - `SectionContent` is an output protocol requiring cells, supplementary views and
@@ -28,16 +29,16 @@ changes from 0.2 and the compositional-only section model introduced in 0.2.
 - Optional `SectionStore.reconcile(_:)` resolves definitions and immediately accepts
   the resulting ordered instances. `reconcile(_:apply:)` first awaits its callback
   for structural changes, then accepts membership; unchanged membership skips that
-  callback. Both return `Change` with target presenters, retained instances in target
+  callback. Both return `Change` with target controllers, retained instances in target
   order, removals in previous order, and an instance/order change flag.
-- Definition matching uses ID plus Input and Presenter types. New instances receive
-  only `make(input)`; survivors receive the current `update(presenter, input)` even
+- Definition matching uses ID plus Input and Controller types. New instances receive
+  only `make(input)`; survivors receive the current `update(controller, input)` even
   for repeated input. IDs must remain stable and match the definition. Duplicate IDs
   reject the full list before any definition closure executes. Removed instances are
   released by the store, and a returning identity is created again.
 - Reconcile calls must be serialized and cannot reenter the store from callbacks.
   Callback failure preserves membership/order, not staged input or callback effects.
-  A returned change retains its presenters and is not a display snapshot. The store
+  A returned change retains its controllers and is not a display snapshot. The store
   retains no previous inputs or definition closures and never captures or submits
   presentations. The caller separately submits retained content through existing APIs.
 - `setSections(_:animated:mode:completion:)` and its async overload change membership and

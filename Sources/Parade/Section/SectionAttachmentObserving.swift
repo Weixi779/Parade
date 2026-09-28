@@ -2,7 +2,7 @@
 
 /// Observes successful membership changes, independently of view visibility.
 @MainActor
-public protocol SectionAttachmentObserving: SectionPresenter {
+public protocol SectionAttachmentObserving: SectionController {
     /// The update context is attached and can accept updates.
     func didAttach()
     /// The update context is disconnected. Cancel work owned by this attachment.

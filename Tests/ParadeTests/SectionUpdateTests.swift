@@ -149,7 +149,7 @@ struct SectionUpdateTests {
         #expect(fixture.owner.indexPath(for: 3) == nil)
         #expect(fixture.view.cellForItem(at: path)?.accessibilityLabel == "2")
         #expect(fixture.view.layoutAttributesForItem(at: path)?.frame.height == 96)
-        #expect(section.updates.isAttached)
+        #expect(section.updateContext.isAttached)
         #expect(fixture.owner.appliedRevision == 4)
     }
 
@@ -174,8 +174,8 @@ struct SectionUpdateTests {
         }
         try await removal.value
         await #expect(throws: CollectionUpdateError.staleSectionInstance("a")) { try await lateUpdate.value }
-        #expect(!old.updates.isAttached)
-        #expect(replacement.updates.isAttached)
+        #expect(!old.updateContext.isAttached)
+        #expect(replacement.updateContext.isAttached)
         #expect(fixture.owner.indexPath(for: 1) == nil)
         #expect(fixture.owner.indexPath(for: 2) == IndexPath(item: 0, section: 0))
     }
@@ -231,7 +231,7 @@ struct SectionUpdateTests {
         first.source.gate = gate
         let attachment = Task { try await first.owner.setSections([section], animated: false) }
         await gate.waitUntilStarted()
-        #expect(!section.updates.isAttached)
+        #expect(!section.updateContext.isAttached)
         await #expect(throws: CollectionUpdateError.sectionAlreadyAttached) {
             try await second.owner.setSections([section], animated: false)
         }
@@ -239,7 +239,7 @@ struct SectionUpdateTests {
         try await attachment.value
         try await first.owner.setSections([], animated: false)
         try await second.owner.setSections([section], animated: false)
-        #expect(section.updates.isAttached)
+        #expect(section.updateContext.isAttached)
     }
 
     @Test("Structural stages retain layout with their section metadata")
@@ -389,7 +389,7 @@ struct SectionUpdateTests {
         owner = nil
         await detached.wait()
         #expect(weakOwner == nil)
-        #expect(!section.updates.isAttached)
+        #expect(!section.updateContext.isAttached)
         #expect(section.events == [.attach, .visibility(true), .visibility(false), .detach])
         #expect(section.sectionDisplayEvents == [true, false])
     }
@@ -604,13 +604,13 @@ private struct Content: SectionContent {
 }
 
 @MainActor
-private final class Section: SectionPresenter, SectionAttachmentObserving, CollectionDisplayObserving, SectionDisplayObserving {
+private final class Section: SectionController, SectionAttachmentObserving, CollectionDisplayObserving, SectionDisplayObserving {
     enum Event: Equatable {
         case attach, visibility(Bool), detach
     }
 
     let id: String
-    let updates = SectionUpdateContext()
+    let updateContext = SectionUpdateContext()
     var items: [Int]
     var height: CGFloat = 44
     var hasHeader = false
@@ -638,14 +638,14 @@ private final class Section: SectionPresenter, SectionAttachmentObserving, Colle
     func didAttach() {
         events.append(.attach)
         displayOrder.append("attach")
-        attachmentStates.append(updates.isAttached)
+        attachmentStates.append(updateContext.isAttached)
         onAttach?()
     }
 
     func didDetach() {
         events.append(.detach)
         displayOrder.append("detach")
-        attachmentStates.append(updates.isAttached)
+        attachmentStates.append(updateContext.isAttached)
         onDetach?()
     }
 

@@ -79,7 +79,7 @@ window.makeKeyAndVisible()
 
 The IM example uses `CollectionOrchestrator(collectionView:)` with Parade's default
 data source. The App Store example injects `DiffableCollectionDataSource` through
-the initializer's factory closure. Both use the same Presenter protocols, view
+the initializer's factory closure. Both use the same section-controller and presenter protocols, view
 providers, delegate handling, and public completion contract. The smoke test exercises
 both implementations in the same app, including content updates on the Apple path.
 

@@ -4,7 +4,7 @@ import Foundation
 
 /// One section's identity, input, and construction/update behavior for a reconciliation.
 ///
-/// A store reuses an instance only when its ID, Input type, and Presenter type all
+/// A store reuses an instance only when its ID, Input type, and Controller type all
 /// match. Changing either type replaces the instance, even under the same ID.
 /// Each reconciliation uses the current definition's closures. Inputs need not be
 /// Equatable: every retained instance receives its input, even if it appears unchanged.
@@ -15,23 +15,23 @@ public struct SectionDefinition {
     /// `make` receives the initial input; `update` runs only for a retained instance.
     /// Both must preserve the supplied ID. Use `update` to stage business state;
     /// presentation submission remains the caller's responsibility.
-    public init<Id: Hashable, Input, Presenter: SectionPresenter>(
+    public init<Id: Hashable, Input, Controller: SectionController>(
         id: Id,
         input: Input,
-        make: @escaping @MainActor (Input) -> Presenter,
-        update: @escaping @MainActor (Presenter, Input) -> Void
-    ) where Presenter.Id == Id {
+        make: @escaping @MainActor (Input) -> Controller,
+        update: @escaping @MainActor (Controller, Input) -> Void
+    ) where Controller.Id == Id {
         self.id = AnyHashable(id)
         resolve = { previous in
-            if let previous = previous as? SectionInstance<Input, Presenter> {
+            if let previous = previous as? SectionInstance<Input, Controller> {
                 update(previous.value, input)
                 precondition(previous.value.id == id, "Updating a section must preserve its ID")
                 return previous
             }
 
-            let presenter = make(input)
-            precondition(presenter.id == id, "Section and presenter IDs must match")
-            return SectionInstance<Input, Presenter>(presenter)
+            let controller = make(input)
+            precondition(controller.id == id, "Section and controller IDs must match")
+            return SectionInstance<Input, Controller>(controller)
         }
     }
 
@@ -41,21 +41,21 @@ public struct SectionDefinition {
 @MainActor
 protocol StoredSection: AnyObject {
     var id: AnyHashable { get }
-    var presenter: any SectionPresenter { get }
+    var controller: any SectionController { get }
 }
 
-/// Retains the presenter and its type association, never an input or definition closure.
+/// Retains the controller and its type association, never an input or definition closure.
 @MainActor
-private final class SectionInstance<Input, Presenter: SectionPresenter>: StoredSection {
+private final class SectionInstance<Input, Controller: SectionController>: StoredSection {
     let id: AnyHashable
-    let value: Presenter
+    let value: Controller
 
-    init(_ value: Presenter) {
+    init(_ value: Controller) {
         id = AnyHashable(value.id)
         self.value = value
     }
 
-    var presenter: any SectionPresenter {
+    var controller: any SectionController {
         value
     }
 }

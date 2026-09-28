@@ -5,7 +5,7 @@ application creates the collection view. `CollectionOrchestrator` installs and o
 its `UICollectionViewCompositionalLayout`, data source and delegate. This breaking
 version has one layout contract and no Flow-layout compatibility path.
 
-A `SectionPresenter` is a MainActor reference type. It owns module state and a
+A `SectionController` is a MainActor reference type. It owns module state and a
 `SectionUpdateContext`, and captures a `SectionContent`. The output protocol
 requires cells, supplementary views and `makeLayout(in:) -> NSCollectionLayoutSection`.
 `DefaultSectionContent` is a convenience implementation. `SectionSnapshot` erases
@@ -28,12 +28,12 @@ application implementation. There is no backend-type branch in the orchestrator.
 
 | Role | Owns | Does not own |
 | --- | --- | --- |
-| SectionStore | Ordered presenter instances, definition matching, reuse/replacement and membership acceptance | Business input policy, presentation capture, attachment, UIKit submission |
+| SectionStore | Ordered controller instances, definition matching, reuse/replacement and membership acceptance | Business input policy, presentation capture, attachment, UIKit submission |
 | SectionDefinition | One reconciliation's ID, typed input, factory and updater | Long-lived instance storage or display snapshots |
-| SectionPresenter | Stable module identity, business state, requests/listeners, update context, capture of display output | Collection indexing, other modules, UIKit execution |
+| SectionController | Stable module identity, business state, requests/listeners, update context, capture of display output | Collection indexing, other modules, UIKit execution |
 | SectionContent | Immutable cell/supplementary output and inputs for native section layout construction | Live business mutations, collection membership |
 | SectionSnapshot | One section's captured identity, content and layout version, including derived update stages | Live module state or instance reuse |
-| CollectionSnapshot | One validated collection display version and its lookup indexes | Live presenter ownership or reconciliation |
+| CollectionSnapshot | One validated collection display version and its lookup indexes | Live controller ownership or reconciliation |
 | CellPresenter | One occurrence's identity, content comparison, concrete cell configuration and behaviors | Collection indexing or other sections |
 | SupplementaryPresenter | Reusable-view identity, kind/item address, configuration and behaviors | Layout creation or cell lifetime |
 | CollectionOrchestrator | Module attachment, operation queue, last completed baseline, compositional layout provider, registry, delegate bridge, completion | Current data-source positions, diff execution or UIKit batches |
@@ -60,10 +60,10 @@ The default implementation has three roles: the data source executes updates,
 contains one batch's operations and its actual data. Plan validation is an extension
 of that value, not another service or state owner.
 
-## Presenter composition
+## Section composition
 
 An optional `SectionStore` reconciles a page's changing `[SectionDefinition]` into
-stable presenter instances. Reuse requires matching ID, Input type, and Presenter
+stable controller instances. Reuse requires matching ID, Input type, and Controller
 type. The application retains the store, supplies business mappings, and serializes
 reconciliations. The store keeps the instances and type associations, not old input
 values or definition closures. Removed instances are not cached for reinsertion.
@@ -74,7 +74,7 @@ also identifies survivors for a subsequent content submission. Failure preserves
 membership, but does not undo already-staged business input. This layer does not
 replace the orchestrator's attachment state, completed baseline, or operation queue.
 The synchronous overload accepts immediately for applications managing submission
-separately. Direct presenter ownership remains supported without a store.
+separately. Direct controller ownership remains supported without a store.
 
 Sections are classes conforming to a protocol; no framework base class is required.
 An App Store section can transform one business model into two, four, or any number
@@ -138,10 +138,10 @@ must implement their configuration method and may return `nil` for a given reque
 
 Cell/supplementary presenter and capability protocols place MainActor on specific UI requirements:
 configuration, behavior binding, interaction-policy reads, and event callbacks.
-Their conforming types are not implicitly isolated as a whole. The `SectionPresenter`
+Their conforming types are not implicitly isolated as a whole. The `SectionController`
 contract itself is MainActor-isolated because it owns mutable state.
 
-`SectionPresenter.captureContent()` is read on MainActor, and
+`SectionController.captureContent()` is read on MainActor, and
 `SectionSnapshot.init(capturing:)` captures content and binds the native layout method there. Supplementary `elementKind` is also
 read there because UIKit's header/footer constants are isolated in the SDK;
 `AnySupplementaryPresenter.init(_:)` captures that value once. Identity itself,
@@ -198,7 +198,7 @@ sequenceDiagram
 ```
 
 `CollectionSnapshot` and `SectionSnapshot` expose the existing captured input to
-external implementations. Callers still submit section presenters; they do not need
+external implementations. Callers still submit section controllers; they do not need
 to build a public snapshot. The collection snapshot is complete, including identity, content, supplementary information and captured layout construction. UIKit callbacks and public position queries read the
 selected data source, never the orchestrator's last completed baseline.
 

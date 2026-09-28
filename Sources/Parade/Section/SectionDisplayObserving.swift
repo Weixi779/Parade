@@ -5,7 +5,7 @@
 /// measure exposure percentages, occlusion, or application activity. During content
 /// updates, notifications wait until all UIKit stages have settled.
 @MainActor
-public protocol SectionDisplayObserving: SectionPresenter {
+public protocol SectionDisplayObserving: SectionController {
     /// The first view begins displaying, or the collection becomes visible while
     /// this section already has displayed views. Runs after collectionWillDisplay().
     func sectionWillDisplay()

@@ -150,7 +150,7 @@ public final class CollectionOrchestrator {
     /// accepted content; instances absent at execution use this call's capture.
     /// Await attachment before calling a newly added section's update().
     public func setSections(
-        _ sections: [any SectionPresenter],
+        _ sections: [any SectionController],
         animated: Bool = true,
         mode: CollectionUpdateMode = .diff,
         completion: @escaping @MainActor (Result<Void, CollectionUpdateError>) -> Void = { _ in }
@@ -223,7 +223,7 @@ public final class CollectionOrchestrator {
     }
 
     public func setSections(
-        _ sections: [any SectionPresenter],
+        _ sections: [any SectionController],
         animated: Bool = true,
         mode: CollectionUpdateMode = .diff
     ) async throws {
@@ -235,7 +235,7 @@ public final class CollectionOrchestrator {
     /// Atomically updates one or more attached modules. Use one operation for a
     /// cell transfer between sections, or any coordinated multi-section change.
     public func update(
-        _ sections: [any SectionPresenter],
+        _ sections: [any SectionController],
         animated: Bool = true,
         mode: CollectionUpdateMode = .diff
     ) async throws {
@@ -498,7 +498,7 @@ public final class CollectionOrchestrator {
         let id: AnyHashable
         let identity: ObjectIdentifier
         let context: SectionUpdateContext
-        let section: any SectionPresenter
+        let section: any SectionController
         let displayIdentity: SectionDisplayIdentity
         private var isAttached = false
         private var isCollectionVisible = false
@@ -507,11 +507,11 @@ public final class CollectionOrchestrator {
         private var isSectionDisplayed = false
         private var isNotifyingDisplay = false
 
-        init<S: SectionPresenter>(_ section: S) {
+        init<S: SectionController>(_ section: S) {
             id = AnyHashable(section.id)
             displayIdentity = SectionDisplayIdentity(sectionId: id)
             identity = ObjectIdentifier(section)
-            context = section.updates
+            context = section.updateContext
             self.section = section
         }
 

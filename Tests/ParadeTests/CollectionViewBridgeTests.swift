@@ -779,9 +779,9 @@ private final class Fixture {
 }
 
 @MainActor
-private final class Section: SectionPresenter {
+private final class Section: SectionController {
     var requestsHeader = false
-    let updates = SectionUpdateContext()
+    let updateContext = SectionUpdateContext()
     let id: String
     var cells: [AnyCellPresenter]
     var supplementaryViews: [AnySupplementaryPresenter]

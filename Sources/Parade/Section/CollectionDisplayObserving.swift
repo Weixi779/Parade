@@ -3,7 +3,7 @@
 /// Observes the whole collection's display lifecycle, even when this section is offscreen.
 /// The application supplies visibility through CollectionOrchestrator.setVisible(_:).
 @MainActor
-public protocol CollectionDisplayObserving: SectionPresenter {
+public protocol CollectionDisplayObserving: SectionController {
     /// The collection is visible and this module has completed attachment.
     func collectionWillDisplay()
 

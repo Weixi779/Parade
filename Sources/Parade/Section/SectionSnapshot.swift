@@ -5,7 +5,7 @@
 import UIKit
 
 /// One section's captured display version, including its identity and content.
-/// Queued updates and data sources use snapshots instead of rereading a mutable presenter.
+/// Queued updates and data sources use snapshots instead of rereading a mutable controller.
 /// Structural batches can derive intermediate snapshots while retaining layout identity.
 public struct SectionSnapshot: DiffableSection {
     public let id: AnyHashable
@@ -39,7 +39,7 @@ public struct SectionSnapshot: DiffableSection {
     }
 
     @MainActor
-    init<S: SectionPresenter>(capturing section: S) {
+    init<S: SectionController>(capturing section: S) {
         let content = section.captureContent()
         id = AnyHashable(section.id)
         cells = content.cells

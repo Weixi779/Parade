@@ -15,8 +15,8 @@ struct SectionStoreTests {
         }
 
         #expect(store.ids.isEmpty)
-        #expect(store.presenters.isEmpty)
-        #expect(change.presenters.isEmpty)
+        #expect(store.controllers.isEmpty)
+        #expect(change.controllers.isEmpty)
         #expect(change.retained.isEmpty)
         #expect(change.removed.isEmpty)
         #expect(!change.hasStructuralChanges)
@@ -27,7 +27,7 @@ struct SectionStoreTests {
         var creations = 0
         let definition = SectionDefinition(id: "a", input: "initial", make: {
             creations += 1
-            return Presenter<Regular>("a", value: $0)
+            return Controller<Regular>("a", value: $0)
         }, update: { _, _ in
             Issue.record("A new instance already received its input through make")
         })
@@ -36,31 +36,31 @@ struct SectionStoreTests {
 
         let store = SectionStore()
         let change = try store.reconcile([definition])
-        let section = try #require(store.presenters.first as? Presenter<Regular>)
+        let section = try #require(store.controllers.first as? Controller<Regular>)
         #expect(creations == 1)
         #expect(section.value == "initial")
-        #expect(!section.updates.isAttached)
+        #expect(!section.updateContext.isAttached)
         #expect(change.hasStructuralChanges)
         #expect(change.retained.isEmpty)
         #expect(change.removed.isEmpty)
-        #expect(change.presenters.first === section)
+        #expect(change.controllers.first === section)
     }
 
     @Test("Reused instances keep local state and receive the current update closure")
     func retainedState() throws {
         let store = SectionStore()
         try store.reconcile([definition("a", value: "first")])
-        let section = try #require(store.presenters.first as? Presenter<Regular>)
+        let section = try #require(store.controllers.first as? Controller<Regular>)
         section.isExpanded = true
 
         let change = try store.reconcile([
             SectionDefinition(id: "a", input: "second", make: {
                 Issue.record("Matching instances must not be reconstructed")
-                return Presenter<Regular>("a", value: $0)
+                return Controller<Regular>("a", value: $0)
             }, update: { $0.value = "current closure: \($1)" }),
         ])
 
-        #expect(store.presenters.first === section)
+        #expect(store.controllers.first === section)
         #expect(change.retained.first === section)
         #expect(section.value == "current closure: second")
         #expect(section.isExpanded)
@@ -71,7 +71,7 @@ struct SectionStoreTests {
     func repeatedInput() async throws {
         let store = SectionStore()
         try store.reconcile([definition("a", value: "server")])
-        let section = try #require(store.presenters.first as? Presenter<Regular>)
+        let section = try #require(store.controllers.first as? Controller<Regular>)
         section.value = "local edit"
 
         let change = try await store.reconcile([definition("a", value: "server")]) { _ in
@@ -83,21 +83,21 @@ struct SectionStoreTests {
         #expect(!change.hasStructuralChanges)
     }
 
-    @Test("The same input type may feed different concrete presenters")
-    func heterogeneousPresenters() throws {
+    @Test("The same input type may feed different concrete controllers")
+    func heterogeneousControllers() throws {
         let store = SectionStore()
         try store.reconcile([
             definition("regular", value: "one"),
             SectionDefinition(id: "featured", input: "two", make: {
-                Presenter<Featured>("featured", value: $0)
+                Controller<Featured>("featured", value: $0)
             }, update: { $0.value = $1 }),
         ])
-        let regular = try #require(store.presenters.first as? Presenter<Regular>)
-        let featured = try #require(store.presenters.last as? Presenter<Featured>)
+        let regular = try #require(store.controllers.first as? Controller<Regular>)
+        let featured = try #require(store.controllers.last as? Controller<Featured>)
 
         let change = try store.reconcile([
             SectionDefinition(id: "featured", input: "updated", make: {
-                Presenter<Featured>("featured", value: $0)
+                Controller<Featured>("featured", value: $0)
             }, update: { $0.value = $1 }),
             definition("regular", value: "also updated"),
         ])
@@ -110,15 +110,15 @@ struct SectionStoreTests {
         #expect(featured.value == "updated")
     }
 
-    @Test("Changing presenter type replaces the instance under the same ID")
-    func presenterTypeReplacement() throws {
+    @Test("Changing controller type replaces the instance under the same ID")
+    func controllerTypeReplacement() throws {
         let store = SectionStore()
         try store.reconcile([definition("a")])
-        let previous = try #require(store.presenters.first)
+        let previous = try #require(store.controllers.first)
 
         let change = try store.reconcile([
             SectionDefinition(id: "a", input: "replacement", make: {
-                Presenter<Featured>("a", value: $0)
+                Controller<Featured>("a", value: $0)
             }, update: { _, _ in Issue.record("A replacement must be created, not updated") }),
         ])
 
@@ -126,28 +126,28 @@ struct SectionStoreTests {
         #expect(change.retained.isEmpty)
         #expect(change.removed.count == 1)
         #expect(change.removed.first === previous)
-        #expect(store.presenters.first is Presenter<Featured>)
-        #expect(store.presenters.first !== previous)
+        #expect(store.controllers.first is Controller<Featured>)
+        #expect(store.controllers.first !== previous)
         #expect(store.ids == [AnyHashable("a")])
     }
 
-    @Test("Changing input type replaces the association even with the same presenter type")
+    @Test("Changing input type replaces the association even with the same controller type")
     func inputTypeReplacement() throws {
         let store = SectionStore()
         try store.reconcile([definition("a")])
-        let previous = try #require(store.presenters.first)
+        let previous = try #require(store.controllers.first)
 
         let change = try store.reconcile([
             SectionDefinition(id: "a", input: 42, make: {
-                Presenter<Regular>("a", value: String($0))
+                Controller<Regular>("a", value: String($0))
             }, update: { _, _ in Issue.record("A different Input establishes a new association") }),
         ])
 
         #expect(change.hasStructuralChanges)
         #expect(change.retained.isEmpty)
         #expect(change.removed.first === previous)
-        #expect(store.presenters.first !== previous)
-        #expect((store.presenters.first as? Presenter<Regular>)?.value == "42")
+        #expect(store.controllers.first !== previous)
+        #expect((store.controllers.first as? Controller<Regular>)?.value == "42")
     }
 
     @Test("Changes preserve target order for survivors and previous order for removals", arguments: [
@@ -160,12 +160,12 @@ struct SectionStoreTests {
     func membership(_ scenario: MembershipCase) throws {
         let store = SectionStore()
         try store.reconcile([definition("a"), definition("b"), definition("c")])
-        let previous = Dictionary(uniqueKeysWithValues: zip(store.ids, store.presenters))
+        let previous = Dictionary(uniqueKeysWithValues: zip(store.ids, store.controllers))
 
         let change = try store.reconcile(scenario.target.map { definition($0) })
 
         #expect(store.ids == scenario.target.map(AnyHashable.init))
-        #expect(ids(change.presenters) == scenario.target)
+        #expect(ids(change.controllers) == scenario.target)
         #expect(ids(change.retained) == scenario.retained)
         #expect(ids(change.removed) == scenario.removed)
         #expect(change.hasStructuralChanges == scenario.structural)
@@ -178,11 +178,11 @@ struct SectionStoreTests {
     func duplicateIds(useAsync: Bool) async throws {
         let store = SectionStore()
         try store.reconcile([definition("a", value: "accepted")])
-        let section = try #require(store.presenters.first as? Presenter<Regular>)
+        let section = try #require(store.controllers.first as? Controller<Regular>)
         let watched: (String) -> SectionDefinition = { id in
             SectionDefinition(id: id, input: "rejected", make: {
                 Issue.record("Validation must finish before creating any instance")
-                return Presenter<Regular>(id, value: $0)
+                return Controller<Regular>(id, value: $0)
             }, update: { _, _ in Issue.record("Validation must finish before updating any instance") })
         }
         // Both an insertion and a survivor precede the duplicate at the end.
@@ -197,7 +197,7 @@ struct SectionStoreTests {
         }
 
         #expect(store.ids == [AnyHashable("a")])
-        #expect(store.presenters.first === section)
+        #expect(store.controllers.first === section)
         #expect(section.value == "accepted")
         try store.reconcile([definition("a", value: "valid retry")])
         #expect(section.value == "valid retry")
@@ -207,11 +207,11 @@ struct SectionStoreTests {
     func reinsertion() throws {
         let store = SectionStore()
         try store.reconcile([definition("a")])
-        let previous = try #require(store.presenters.first as? Presenter<Regular>)
+        let previous = try #require(store.controllers.first as? Controller<Regular>)
         previous.isExpanded = true
         try store.reconcile([])
         let change = try store.reconcile([definition("a")])
-        let replacement = try #require(store.presenters.first as? Presenter<Regular>)
+        let replacement = try #require(store.controllers.first as? Controller<Regular>)
 
         #expect(replacement !== previous)
         #expect(!replacement.isExpanded)
@@ -227,8 +227,8 @@ struct SectionStoreTests {
         let definitions = [definition("a")]
         try first.reconcile(definitions)
         try second.reconcile(definitions)
-        let a = try #require(first.presenters.first as? Presenter<Regular>)
-        let b = try #require(second.presenters.first as? Presenter<Regular>)
+        let a = try #require(first.controllers.first as? Controller<Regular>)
+        let b = try #require(second.controllers.first as? Controller<Regular>)
         a.isExpanded = true
 
         #expect(a !== b)
@@ -241,7 +241,7 @@ struct SectionStoreTests {
         if reuse {
             try store.reconcile([
                 SectionDefinition(id: "a", input: Reference(), make: { _ in
-                    Presenter<Regular>("a", value: "initial")
+                    Controller<Regular>("a", value: "initial")
                 }, update: { _, _ in }),
             ])
         }
@@ -257,7 +257,7 @@ struct SectionStoreTests {
             updateCapture.value = updater
             try store.reconcile([
                 SectionDefinition(id: "a", input: model, make: { model in
-                    Presenter<Regular>("a", value: factory.value + model.value)
+                    Controller<Regular>("a", value: factory.value + model.value)
                 }, update: { section, model in
                     section.value = updater.value + model.value
                 }),
@@ -267,17 +267,17 @@ struct SectionStoreTests {
         #expect(input.value == nil)
         #expect(factoryCapture.value == nil)
         #expect(updateCapture.value == nil)
-        #expect(store.presenters.count == 1)
+        #expect(store.controllers.count == 1)
     }
 
-    @Test("A change retains removed presenters only for the lifetime of the result")
+    @Test("A change retains removed controllers only for the lifetime of the result")
     func removalLifetime() throws {
         let store = SectionStore()
         try store.reconcile([definition("a")])
-        let removed = try WeakReference(#require(store.presenters.first as? Presenter<Regular>))
+        let removed = try WeakReference(#require(store.controllers.first as? Controller<Regular>))
         do {
             let change = try store.reconcile([])
-            #expect(store.presenters.isEmpty)
+            #expect(store.controllers.isEmpty)
             #expect(removed.value != nil)
             #expect(change.removed.first === removed.value)
         }
@@ -290,7 +290,7 @@ struct SectionStoreTests {
         do {
             let store = SectionStore()
             try store.reconcile([definition("a")])
-            reference.value = try #require(store.presenters.first as? Presenter<Regular>)
+            reference.value = try #require(store.controllers.first as? Controller<Regular>)
             #expect(reference.value != nil)
         }
         #expect(reference.value == nil)
@@ -300,24 +300,24 @@ struct SectionStoreTests {
     func suspendedAcceptance() async throws {
         let store = SectionStore()
         try store.reconcile([definition("a", value: "old"), definition("b")])
-        let a = try #require(store.presenters.first as? Presenter<Regular>)
+        let a = try #require(store.controllers.first as? Controller<Regular>)
         let gate = SubmissionGate()
         let submission = Task {
             try await store.reconcile([definition("new"), definition("a", value: "pending")]) { change in
-                #expect(ids(change.presenters) == ["new", "a"])
+                #expect(ids(change.controllers) == ["new", "a"])
                 #expect(ids(change.removed) == ["b"])
                 await gate.pause()
             }
         }
         await gate.waitUntilStarted()
         #expect(store.ids == [AnyHashable("a"), AnyHashable("b")])
-        #expect(store.presenters.first === a)
+        #expect(store.controllers.first === a)
         #expect(a.value == "pending")
         gate.resume()
         let change = try await submission.value
 
         #expect(store.ids == [AnyHashable("new"), AnyHashable("a")])
-        #expect(store.presenters.last === a)
+        #expect(store.controllers.last === a)
         #expect(change.retained.first === a)
     }
 
@@ -325,20 +325,20 @@ struct SectionStoreTests {
     func rejectedSubmission() async throws {
         let store = SectionStore()
         try store.reconcile([definition("a", value: "old"), definition("b")])
-        let a = try #require(store.presenters.first as? Presenter<Regular>)
-        let b = try #require(store.presenters.last)
+        let a = try #require(store.controllers.first as? Controller<Regular>)
+        let b = try #require(store.controllers.last)
         let rejected = WeakReference()
 
         await #expect(throws: Rejection.failed) {
             try await store.reconcile([definition("a", value: "pending"), definition("new")]) { change in
-                rejected.value = change.presenters.last
+                rejected.value = change.controllers.last
                 throw Rejection.failed
             }
         }
 
         #expect(store.ids == [AnyHashable("a"), AnyHashable("b")])
-        #expect(store.presenters.first === a)
-        #expect(store.presenters.last === b)
+        #expect(store.controllers.first === a)
+        #expect(store.controllers.last === b)
         #expect(a.value == "pending")
         #expect(rejected.value == nil)
 
@@ -357,7 +357,7 @@ struct SectionStoreTests {
         let rejected = WeakReference()
         await #expect(throws: CancellationError.self) {
             try await store.reconcile([definition("a")]) { change in
-                rejected.value = change.presenters.first
+                rejected.value = change.controllers.first
                 throw CancellationError()
             }
         }
@@ -369,12 +369,12 @@ struct SectionStoreTests {
 
     private func definition(_ id: String, value: String = "value") -> SectionDefinition {
         SectionDefinition(id: id, input: value, make: {
-            Presenter<Regular>(id, value: $0)
+            Controller<Regular>(id, value: $0)
         }, update: { $0.value = $1 })
     }
 
-    private func ids(_ presenters: [any SectionPresenter]) -> [String] {
-        presenters.map { String(describing: $0.id) }
+    private func ids(_ controllers: [any SectionController]) -> [String] {
+        controllers.map { String(describing: $0.id) }
     }
 }
 
@@ -390,9 +390,9 @@ private enum Featured {}
 private enum Rejection: Error { case failed }
 
 @MainActor
-private final class Presenter<Kind>: SectionPresenter {
+private final class Controller<Kind>: SectionController {
     let id: String
-    let updates = SectionUpdateContext()
+    let updateContext = SectionUpdateContext()
     var value: String
     var isExpanded = false
 

@@ -2,15 +2,18 @@
 
 A modular UICollectionView framework for Swift.
 
-Parade provides typed section, cell, and supplementary
+Parade provides section controllers, typed cell and supplementary
 presenters, a replaceable data source, and a UIKit update orchestrator. The default
 implementation uses Parade's sectioned diff and staged updates. An adapter for
 Apple's `UICollectionViewDiffableDataSource` is also included.
 
 Parade 0.3 adds optional section reconciliation and attachment/display observation.
 It supports `UICollectionViewCompositionalLayout` exclusively, with section-owned
-updates. Public content and snapshot APIs have been renamed; see the
-[0.2 migration mapping](CHANGELOG.md#api-naming-changes) before upgrading.
+updates. The development API documented below uses `SectionController`,
+`updateContext`, and `SectionStore.controllers`; released 0.3.0 uses
+`SectionPresenter`, `updates`, and `presenters`.
+See the [unreleased naming migration](CHANGELOG.md#section-controller-naming) and
+the [0.3 content/snapshot migration](CHANGELOG.md#api-naming-changes) when upgrading.
 
 ## Requirements
 
@@ -55,7 +58,7 @@ requirement above accepts 0.3 patch releases without automatically upgrading to 
 ## Quick start
 
 The application supplies a collection view and retains its `CollectionOrchestrator`.
-The orchestrator installs a compositional layout. Each reference-type `SectionPresenter`
+The orchestrator installs a compositional layout. Each reference-type `SectionController`
 owns one module's business state and captures a `SectionContent` containing
 cells, supplementary views and native section layout construction.
 
@@ -75,9 +78,9 @@ struct MessagePresenter: CellPresenter {
 }
 
 @MainActor
-final class ConversationSection: SectionPresenter {
+final class ConversationSection: SectionController {
     let id = UUID()
-    let updates = SectionUpdateContext()
+    let updateContext = SectionUpdateContext()
     var messages: [MessagePresenter] = []
 
     func captureContent() -> DefaultSectionContent {
@@ -112,7 +115,7 @@ The names distinguish instances, content, and display versions:
 
 | Type | Meaning |
 | --- | --- |
-| `SectionStore` | Maintains stable presenter instances across changing inputs. |
+| `SectionStore` | Maintains stable controller instances across changing inputs. |
 | `SectionContent` | Describes the display content returned by `captureContent()`. |
 | `SectionSnapshot` | Combines one section's identity and captured content for an update. |
 | `CollectionSnapshot` | Holds one validated display version of the whole collection. |
@@ -278,8 +281,8 @@ The [verification report](Docs/Verification.md) records the tested paths and lim
 Use an optional `SectionStore` when each page update describes a new ordered list
 of modules. Retain the store alongside the orchestrator. `SectionDefinition` pairs
 an ID and input with typed creation and update closures; the store keeps matching
-presenter instances alive so their local state survives page refreshes and reordering.
-Applications with fixed sections can continue holding their presenters directly.
+controller instances alive so their local state survives page refreshes and reordering.
+Applications with fixed sections can continue holding their controllers directly.
 
 For example, a `FeedSection` initializer and `receive(_:)` method can accept the same
 business model while `captureContent()` builds its display version:
@@ -296,7 +299,7 @@ let definitions = models.map { model in
     )
 }
 let change = try await sections.reconcile(definitions) { change in
-    try await orchestrator.setSections(change.presenters)
+    try await orchestrator.setSections(change.controllers)
 }
 if !change.retained.isEmpty {
     try await orchestrator.update(change.retained)
@@ -310,13 +313,13 @@ until the caller submits content. A section with its own submission policy can b
 updated through that policy instead of the final batch above. Structure and content
 are separate submissions; this sequence is not one atomic display transaction.
 
-Reuse requires the same ID, Input type, and Presenter type. Changing either type
+Reuse requires the same ID, Input type, and Controller type. Changing either type
 replaces the instance. Duplicate IDs reject the whole input before any creation or
 update closure runs. Every surviving instance receives the current input and current
 update closure, even for repeated input. The store retains neither old inputs nor
 definition closures. `Change.retained` follows target order; `Change.removed` follows
 previous order and includes same-ID replacements. Keeping a change retains its
-presenters, including removed instances.
+controllers, including removed instances.
 
 Serialize calls to a store, including the full async reconciliation and any follow-up
 content submission. Do not reenter it from definition or apply callbacks. If `apply`

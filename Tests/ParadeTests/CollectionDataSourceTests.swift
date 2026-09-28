@@ -206,8 +206,8 @@ private final class PublicID: Hashable {
 }
 
 @MainActor
-private final class PublicSection: SectionPresenter {
-    let updates = SectionUpdateContext()
+private final class PublicSection: SectionController {
+    let updateContext = SectionUpdateContext()
     func captureContent() -> DefaultSectionContent { testSectionContent(cells: cells) }
     let id: String
     let cells: [AnyCellPresenter]

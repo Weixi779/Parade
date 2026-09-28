@@ -13,7 +13,7 @@ import UIKit
 @MainActor
 public final class IMExampleViewController: UIViewController {
     private lazy var sections = MessageDay.samples.map { day in
-        MessageDayPresenter(day: day) { [weak self] error in
+        MessageDayController(day: day) { [weak self] error in
             self?.navigationItem.prompt = String(describing: error)
         }
     }
@@ -80,28 +80,28 @@ public final class AppStoreExampleViewController: UIViewController {
         }
     }
 
-    private lazy var sections: [any StoreSectionPresenter] = {
+    private lazy var sections: [any StoreSectionController] = {
         let install: @MainActor (String) -> Void = { [weak self] in self?.installOrOpen($0) }
         let open: @MainActor (String) -> Void = { [weak self] in
             self?.navigationItem.prompt = "Selected \($0)"
         }
 
         // Each section keeps a concrete, homogeneous model collection internally.
-        // Type erasure occurs only when the presenters enter Parade's composition.
+        // Type erasure occurs only when the controllers enter Parade's composition.
         return [
-            FeaturedSectionPresenter(
+            FeaturedSectionController(
                 model: page.featured,
                 installedIds: page.installedIds,
                 install: install,
                 open: open
             ),
-            RankingSectionPresenter(
+            RankingSectionController(
                 model: page.ranking,
                 installedIds: page.installedIds,
                 install: install,
                 open: open
             ),
-            RecommendationSectionPresenter(
+            RecommendationSectionController(
                 model: page.recommendations,
                 installedIds: page.installedIds,
                 install: install,
@@ -241,8 +241,8 @@ private struct StoreOccurrenceId: Hashable {
 // MARK: - Sections
 
 @MainActor
-private final class MessageDayPresenter: SectionPresenter {
-    let updates = SectionUpdateContext()
+private final class MessageDayController: SectionController {
+    let updateContext = SectionUpdateContext()
     private(set) var day: MessageDay
     private var expandedMessageIds: Set<Int> = []
     private let onError: @MainActor (any Error) -> Void
@@ -301,13 +301,13 @@ private final class MessageDayPresenter: SectionPresenter {
 }
 
 @MainActor
-private protocol StoreSectionPresenter: SectionPresenter {
+private protocol StoreSectionController: SectionController {
     var installedIds: Set<String> { get set }
 }
 
 @MainActor
-private final class FeaturedSectionPresenter: StoreSectionPresenter {
-    let updates = SectionUpdateContext()
+private final class FeaturedSectionController: StoreSectionController {
+    let updateContext = SectionUpdateContext()
     let model: FeaturedSectionModel
     var installedIds: Set<String>
     let install: @MainActor (String) -> Void
@@ -364,8 +364,8 @@ private final class FeaturedSectionPresenter: StoreSectionPresenter {
 }
 
 @MainActor
-private final class RankingSectionPresenter: StoreSectionPresenter {
-    let updates = SectionUpdateContext()
+private final class RankingSectionController: StoreSectionController {
+    let updateContext = SectionUpdateContext()
     let model: RankingSectionModel
     var installedIds: Set<String>
     let install: @MainActor (String) -> Void
@@ -407,8 +407,8 @@ private final class RankingSectionPresenter: StoreSectionPresenter {
 }
 
 @MainActor
-private final class RecommendationSectionPresenter: StoreSectionPresenter {
-    let updates = SectionUpdateContext()
+private final class RecommendationSectionController: StoreSectionController {
+    let updateContext = SectionUpdateContext()
     let model: RecommendationSectionModel
     var installedIds: Set<String>
     let install: @MainActor (String) -> Void
