@@ -1,0 +1,35 @@
+[
+  {
+    "case": "concrete-section-assembly",
+    "passed": true,
+    "expectedToCompile": true,
+    "diagnostics": []
+  },
+  {
+    "case": "wrong-layout-family",
+    "passed": true,
+    "expectedToCompile": false,
+    "diagnostics": [
+      "/Users/sunshiwei/Develop/Parade/.build/LayoutCompositionStudy/wrong-layout-family.swift:8:28: error: cannot convert value of type '[FlowCards]' to expected argument type '[any SectionController<CompositionalSectionLayout>]'",
+      "   |                            `- error: cannot convert value of type '[FlowCards]' to expected argument type '[any SectionController<CompositionalSectionLayout>]'"
+    ]
+  },
+  {
+    "case": "nonconforming-delegate",
+    "passed": true,
+    "expectedToCompile": false,
+    "diagnostics": [
+      "/Users/sunshiwei/Develop/Parade/.build/LayoutCompositionStudy/nonconforming-delegate.swift:6:9: error: initializer 'init(_:)' requires that 'NSObject' conform to 'UICollectionViewDelegateFlowLayout'",
+      "  |         `- error: initializer 'init(_:)' requires that 'NSObject' conform to 'UICollectionViewDelegateFlowLayout'"
+    ]
+  },
+  {
+    "case": "wrong-datasource-family",
+    "passed": true,
+    "expectedToCompile": false,
+    "diagnostics": [
+      "/Users/sunshiwei/Develop/Parade/.build/LayoutCompositionStudy/wrong-datasource-family.swift:7:9: error: cannot convert value of type 'DiffableCollectionDataSource<CompositionalSectionLayout>' to closure result type 'any CollectionDataSource<FlowSectionLayout>'",
+      "   |         `- error: cannot convert value of type 'DiffableCollectionDataSource<CompositionalSectionLayout>' to closure result type 'any CollectionDataSource<FlowSectionLayout>'"
+    ]
+  }
+]
