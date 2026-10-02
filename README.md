@@ -7,9 +7,9 @@ presenters, a replaceable data source, and a UIKit update orchestrator. The defa
 implementation uses Parade's sectioned diff and staged updates. An adapter for
 Apple's `UICollectionViewDiffableDataSource` is also included.
 
-Parade 0.3 adds optional section reconciliation and attachment/display observation.
-It supports `UICollectionViewCompositionalLayout` exclusively, with section-owned
-updates. The development API documented below uses `SectionController`,
+The development API supports section-owned Compositional, Flow and custom layouts,
+with one typed layout contract per collection. Released 0.3.0 supports
+Compositional layouts only. The development API documented below uses `SectionController`,
 `updateContext`, and `SectionStore.controllers`; released 0.3.0 uses
 `SectionPresenter`, `updates`, and `presenters`.
 See the [unreleased naming migration](CHANGELOG.md#section-controller-naming) and
@@ -60,7 +60,8 @@ requirement above accepts 0.3 patch releases without automatically upgrading to 
 ## Quick start
 
 The application supplies a collection view and retains its `CollectionOrchestrator`.
-The orchestrator installs a compositional layout. Each reference-type `SectionController`
+The default initializer installs a compositional layout; `layout:` selects Flow or a
+custom integration. Each reference-type `SectionController`
 owns one module's business state and captures a `SectionContent` containing
 cells, supplementary views and native section layout construction.
 
@@ -85,8 +86,8 @@ final class ConversationSection: SectionController {
     let updateContext = SectionUpdateContext()
     var messages: [MessagePresenter] = []
 
-    func captureContent() -> DefaultSectionContent {
-        DefaultSectionContent(cells: messages.map(AnyCellPresenter.init)) { environment in
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        LayoutContent(cells: messages.map(AnyCellPresenter.init)) { environment in
             let configuration = UICollectionLayoutListConfiguration(appearance: .plain)
             return NSCollectionLayoutSection.list(using: configuration, layoutEnvironment: environment)
         }
@@ -107,11 +108,18 @@ try await orchestrator.compose([conversation]).apply(animated: false)
 try await conversation.receive(MessagePresenter(id: UUID(), text: "Hello"))
 ```
 
-`SectionContent` is a protocol; `DefaultSectionContent` is optional
-convenience storage. A custom immutable output can hold layout inputs such as a
-column count and implement `makeLayout(in:)` directly. Capture those inputs with
-the cells; never have a captured layout closure reread mutable section state.
-The environment remains current when UIKit constructs the layout.
+`SectionContent` associates a `Layout` type with its cells and supplementary views.
+`LayoutContent<Layout>` provides convenience storage; custom outputs expose their
+layout through `@MainActor var layout`. Capture business inputs with the cells;
+never have a captured layout closure reread mutable section state. The environment
+remains current when UIKit constructs the layout.
+
+For Flow, return `LayoutContent<FlowSectionLayout>` with a concrete native delegate
+factory, then construct the orchestrator with `layout: .flow()`. For custom layouts,
+`CollectionLayout` assembles the native layout and a `CollectionLayoutDelegate`
+subclass implementing its own protocol. Existing interaction/display callbacks remain
+handled by Parade. See the [layout integration and migration guide](Docs/LayoutIntegration.md)
+and the runnable [LayoutDemo Xcode project](Examples/LayoutDemo/README.md).
 
 The names distinguish instances, content, and display versions:
 
@@ -314,7 +322,7 @@ For example, a `FeedSection` initializer and `receive(_:)` method can accept the
 business model while `captureContent()` builds its display version:
 
 ```swift
-let sections = SectionStore() // Retain across page updates.
+let sections = SectionStore<CompositionalSectionLayout>() // Retain across page updates.
 
 let definitions = models.map { model in
     SectionDefinition(
@@ -373,7 +381,7 @@ let orchestrator = CollectionOrchestrator(collectionView: collectionView) {
 The closure runs once and returns a concrete instance conforming to
 `CollectionDataSource`. The orchestrator retains it. Each instance belongs to one
 collection view. It can be its own `UICollectionViewDataSource`, as the default is,
-or hold one, as the Apple adapter does. The source also supplies `layoutSection(at:environment:)` from its current captured
+or hold one, as the Apple adapter does. The source also supplies `sectionSnapshot(at:)` from its current captured
 section version. The orchestrator installs its `dataSource`
 property into UIKit; no internal switch selects the implementation. Start it empty
 and submit updates only through the orchestrator.
@@ -466,9 +474,17 @@ Structural tests independently replay more than 23,000 transitions. UIKit tests
 cover data versions, reuse, self-sizing, supplementary updates, and reentrant
 submissions. These are functional checks, not real-device performance benchmarks.
 
+Check public layout types in separate consumer modules, including expected compile
+failures for incompatible layouts, data sources, and delegates:
+
+```sh
+python3 Tests/check_layout_types.py
+```
+
 [CI](https://github.com/Weixi779/Parade/actions/workflows/ci.yml) checks the minimum
-Xcode 16.0 build, runs tests on Xcode 16.4 / iOS 18.5, and builds the public-API
-example app. See [verification](Docs/Verification.md) for coverage and limits.
+Xcode 16.0 build, runs tests on Xcode 16.4 / iOS 18.5, checks public layout types,
+and builds the IM / Store and layout examples. See [verification](Docs/Verification.md)
+for coverage and limits.
 
 ## License
 

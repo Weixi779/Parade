@@ -3,6 +3,7 @@
 """Build the public-API example app for the selected iOS Simulator architecture."""
 
 import argparse
+import os
 import pathlib
 import platform
 import plistlib
@@ -25,6 +26,7 @@ def main():
     sdk = subprocess.check_output(
         ["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"], text=True
     ).strip()
+    environment = dict(os.environ, SDKROOT=sdk)
     common = [
         "xcrun", "swiftc", "-swift-version", "6", "-sdk", sdk,
         "-target", f"{options.arch}-apple-ios16.0-simulator",
@@ -35,12 +37,12 @@ def main():
         "-parse-as-library", "-emit-module", "-emit-library", "-static",
         "-module-name", "Parade", "-emit-module-path", str(modules / "Parade.swiftmodule"),
         "-o", str(modules / "libParade.a"),
-    ] + [str(source) for source in sources], check=True)
+    ] + [str(source) for source in sources], check=True, env=environment)
     subprocess.run(common + [
         "-parse-as-library", "-I", str(modules), "-L", str(modules), "-lParade",
         "-module-name", "ParadeExamples", str(examples / "ParadeExamples.swift"),
         str(examples / "SimulatorApp.swift"), "-o", str(app / "ParadeExamples"),
-    ], check=True)
+    ], check=True, env=environment)
 
     info = {
         "CFBundleIdentifier": "dev.weixi.parade.examples",

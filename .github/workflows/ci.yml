@@ -49,6 +49,15 @@ jobs:
       - name: Build the public-API examples
         run: python3 Examples/build.py
 
+      - name: Check public layout type boundaries
+        run: python3 Tests/check_layout_types.py
+
+      - name: Build the layout demo project
+        run: |
+          xcodebuild -project Examples/LayoutDemo/LayoutDemo.xcodeproj -scheme LayoutDemo \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
+            -derivedDataPath "$RUNNER_TEMP/ParadeLayoutDemo" CODE_SIGNING_ALLOWED=NO build
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7

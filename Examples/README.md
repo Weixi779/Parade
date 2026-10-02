@@ -1,5 +1,9 @@
 # Parade examples
 
+For Compositional, Flow and custom waterfall layout integration, open the separate
+[LayoutDemo Xcode project](LayoutDemo/README.md). It uses the current local library and
+shares public-import consumer code with the layout integration tests.
+
 ## Run the simulator app
 
 From the repository root, build with the selected Xcode's iOS Simulator SDK:

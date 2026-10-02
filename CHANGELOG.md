@@ -6,6 +6,24 @@ The [Podcast migration handoff](Docs/PodcastMigration.md) maps these changes to
 current application call sites and distinguishes available simplifications from
 framework proposals and consumer behavior that still needs verification.
 
+### Typed layout integration
+
+Collections now support Compositional, native Flow and external custom layouts through
+`CollectionLayout<Layout>`. Section-owned layout values and concrete delegate factories
+share the current data-source snapshot boundary; callers can assemble concrete Sections
+without spelling existential types. `SectionedDiffAlgorithm` is unchanged.
+
+This is a breaking migration: replace `DefaultSectionContent` with
+`LayoutContent<CompositionalSectionLayout>`; custom content exposes `layout` instead of
+`makeLayout(in:)`. Explicit controller/store/snapshot/data-source/update type annotations
+carry a layout parameter. Custom data sources provide `sectionSnapshot(at:)` instead of
+`layoutSection(at:environment:)`. The short Compositional initializer and update flow remain.
+
+Custom layout delegates subclass `CollectionLayoutDelegate`; core interaction/display/scroll
+callbacks remain sealed and use the existing Parade handlers. No scroll-position restoration
+or automatic mixed-layout support is added. See the [migration guide](Docs/LayoutIntegration.md)
+and [runnable Xcode demo](Examples/LayoutDemo/README.md).
+
 ### Visibility, bindings, and logging
 
 | Previous API | Replacement |

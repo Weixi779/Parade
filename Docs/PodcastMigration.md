@@ -6,7 +6,7 @@ Podcast 提供真实使用场景，Parade 仍负责定义通用的框架契约�
 
 ## 适用版本与接入位置
 
-本次核对日期为 **2026-10-02**。Parade 对照的是 `18a6eef` 及其后的工作区 public API 整理，属于未发布开发 API；Podcast 对照的是本地 `3eaa6a714` 工作区的实际文件。执行迁移时须重新确认两边版本，不把本文当作已发布 1.0 的能力清单。
+本次核对日期为 **2026-10-02**。Parade 对照的是 `03812f11` public API 整理及后续正式布局实现，属于未发布开发 API；Podcast 对照的是本地 `3eaa6a714` 工作区的实际文件。执行迁移时须重新确认两边版本，不把本文当作已发布 1.0 的能力清单。
 
 Podcast 的 Home 代码当前导入 `XYZFoundationUI`，Collection 实现在该仓库的 `Submodules/XYZFoundationUI/Sources/XYZFoundationUI/Collection/` 中。其 Package 当前没有外部依赖。因此，单独升级 Parade 包版本不会自动迁移这份实现：应先确认继续同步源码，还是调整模块依赖，再迁移调用方。
 
@@ -117,12 +117,23 @@ Shortcut 的实现位于 `Podcast/App/Features/Home/Featured/Sections/Shortcut/P
 
 | 议题 | 当前状态 | 届时要回答的 Podcast 迁移问题 |
 | --- | --- | --- |
-| Flow Layout / 自定义 `UICollectionViewLayout` | 正式库尚未实现；[隔离实验](../Demos/LayoutCompositionStudy/README.md) 已验证返回布局值、具体 delegate、库外自定义协议的组装及两种 data source 更新，接口仍未定案 | 哪些自建 Collection 可以接入；如何取得当前展示阶段的数据、处理 sizing 和 delegate；哪些 layout 适配代码可删除。不要要求每个 Section 写两套布局，也不要按实验名称提前迁移。 |
-| Diff 算法和 DataSource 的命名、可替换边界 | 已有替换能力，public 契约仍在审查；`DefaultSectionedDiff` 只是候选命名 | 调用方使用默认实现、自研算法或自研 DataSource 时各需迁移什么；替换前后如何验证一致性。 |
+| Flow Layout / 自定义 `UICollectionViewLayout` | 正式开发 API 已实现，见下方迁移说明和 [布局契约](LayoutIntegration.md)；尚未迁移 Podcast | 核对实际自建 Collection 的协议和回调，确定适配代码可删范围；每个 Section 只提供自己所属布局类型，不要求写两套。 |
+| Diff 算法和 DataSource 的命名、可替换边界 | 已有替换能力；默认实现与核心的模块边界、共享更新规则和最终命名仍待讨论 | 调用方使用默认实现、自研算法或自研 DataSource 时各需迁移什么；替换前后如何验证一致性。 |
 | 滚动位置保持 | 尚无可交付的自动保持 API | 在实际支持的布局和更新场景中，哪些位置记录/恢复代码可删除；哪些仍由业务布局处理。 |
-| 队列空闲通知、类型擦除后的具体 Presenter 读取 | 讨论项，尚未增加 API | 是否确实能简化 pending render 或自定义 layout 的读取逻辑，先给出已实现契约和使用证据。 |
+| 队列空闲通知 | 讨论项，尚未增加 API | 是否确实能简化 pending render，先给出已实现契约和使用证据。 |
 
 后续每落地一项变更，在本文补齐“框架契约 → Podcast 调用位置 → 必改项 / 可删除代码 → 必须保留的业务行为 → 验证结果”。未经实现和验证的讨论保持待定，不写成升级收益。
+
+## 布局开发 API 的必改项与可简化项
+
+- 现有 Compositional Section 将 `DefaultSectionContent` 改为 `LayoutContent<CompositionalSectionLayout>`；若自己实现 Content，则把 `makeLayout(in:)` 改为返回 `CompositionalSectionLayout` 的 `layout` 属性。原生 Section 构造逻辑可保留。
+- Home 中显式声明的 orchestrator、store、definition、snapshot、data source 类型加上 `<CompositionalSectionLayout>`。共同子协议用 `where Layout == CompositionalSectionLayout` 约束；如果保存 `[any HomeSection]`，通过应用侧 `collectionSection` 出口逐元素转换，写法见 [布局迁移](LayoutIntegration.md#升级现有代码)。本轮发现直接转换带关联类型的子协议数组可编译却运行崩溃，不能只以编译通过为迁移验收。具体 Section 直接构造的数组无需改动。
+- `CollectionOrchestrator(collectionView:)`、`compose/updating/apply`、Section 的 `update()` 保留。无需为了这次布局迁移再包一层提交方法。
+- Flow / 自定义布局可以通过 `LayoutAccess.item(at:as:)` 读取当前阶段的具体 Presenter，按已捕获的 Section 布局设置计算尺寸。以此替代仅为布局复制的“Section 下标 → 最新业务数组 → Presenter”路由；删除前须确认没有承载业务状态或跨快照缓存。
+- 公共 Flow 接入已经处理六个原生 sizing/inset/spacing/header/footer 查询，若应用已有相同的转发表，可以替换为 `FlowSectionLayout` 的具体 delegate 工厂。自定义 Flow 协议仍需库外 `CollectionLayout` 适配，不会自动转发任意 delegate 方法。
+- 继续保留业务布局算法、bounds 失效规则、Cell 内部布局、自适应尺寸和滚动补偿。布局接入不提供通用滚动位置保持；也不应把捕获后的 delegate 工厂改为读取活的 Section。
+
+目前这些收益已在 Parade 的独立公开消费者和两种内置 data source 上验证。本文没有证明 Podcast 中某个自建 Collection 已适配，也没有执行其项目构建；接入 agent 应先重新核对实际代码，再按具体调用处删除重复逻辑。
 
 ## Podcast 迁移验收
 

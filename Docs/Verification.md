@@ -1,5 +1,48 @@
 # Verification
 
+## Typed layout integration — 2026-10-02
+
+The final complete suite passed **147 tests in 13 suites**, with no failures or
+skips, in 17.336 seconds on Xcode 27.0 / Swift 6.4 / iOS 27.0 (iPhone 18 Pro
+simulator). Result bundle: `/private/tmp/ParadeLayouts-final-02.xcresult`.
+
+The new public-import consumer module runs 14 parameterized scenarios through both
+built-in data sources: heterogeneous concrete Flow sections/delegates, native Flow
+defaults and self-sizing, layout-only updates, capture stability, FIFO submissions,
+section/item moves and transfers, Compositional construction, an external pure Swift
+waterfall protocol, typed Store reuse, captured delegate reuse/release, weak layout
+access ownership, and application child-protocol array submissions. Existing binding,
+lifecycle, update planning and diagnostics tests
+continue to pass; scroll forwarding now also enters through the installed public delegate.
+
+`python3 Tests/check_layout_types.py` passed the positive assembly check,
+including application subprotocol arrays, and all four expected compile failures:
+wrong Section layout family, wrong data-source family, nonconforming Flow delegate,
+and overriding a reserved callback. This builds separate modules from current source
+without `@testable`; output is `.build/LayoutAPIChecks/results.json`.
+
+The new `Examples/LayoutDemo/LayoutDemo.xcodeproj` built and ran against the local
+production package. Its six recorded steps verified 92 → 140 pt Compositional sizing,
+80 → 100 pt Flow sizing with Section reorder, two → three waterfall columns, successful
+revisions and actual display callbacks. Geometry report: `/private/tmp/ParadeLayoutDemo-results.json`.
+The original IM / Store public-API app migrates its child-protocol array through a
+per-element `collectionSection` property. A direct array upcast using an explicitly
+constrained primary-associated child protocol compiled but crashed in `_arrayForceCast`
+on this toolchain. The per-element path passes both data-source runtime tests; the
+migration guide records this distinction rather than relying only on typechecking.
+All **10 IM / Store UI smoke checks** passed, including the install action and its
+shared state in all three Store sections. Report: `/private/tmp/ParadeExamples-layout-smoke.json`.
+The simulator initially failed to load a system library after the earlier crash;
+restarting this dedicated device restored launch, without erasing application data.
+
+The full tests emitted weak-variable mutability suggestions and an App Intents
+metadata warning. The standalone example linker now explicitly uses the simulator SDK,
+removing the prior macOS sysroot warning.
+No new minimum-Xcode or iOS 16 runtime verification was performed. CI now includes
+the type checks and demo build, but has not been run remotely for this working change.
+These results do not establish real-device performance, animation quality, or universal
+third-party layout compatibility. Podcast itself has not been migrated or built.
+
 ## Public visibility and binding API — 2026-10-02
 
 Collection visibility is now assigned through `isVisible`; cell and supplementary
