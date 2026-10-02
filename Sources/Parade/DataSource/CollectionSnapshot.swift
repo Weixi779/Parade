@@ -5,9 +5,9 @@ import Foundation
 /// A validated display version of the whole collection, with section and cell indexes.
 /// Completed baselines and update targets use these snapshots; intermediate section
 /// snapshots belong to update batches. This stores captured content, not live section instances.
-public struct CollectionSnapshot {
-    public let sections: [SectionSnapshot]
-    public let sectionsById: [AnyHashable: SectionSnapshot]
+public struct CollectionSnapshot<Layout> {
+    public let sections: [SectionSnapshot<Layout>]
+    public let sectionsById: [AnyHashable: SectionSnapshot<Layout>]
     public let cellsById: [AnyHashable: AnyCellPresenter]
 
     public static var empty: Self { Self() }
@@ -19,7 +19,7 @@ public struct CollectionSnapshot {
     }
 
     /// Validate each section completely before the next, preserving error order.
-    init(_ sections: [SectionSnapshot]) throws(ValidationFailure) {
+    init(_ sections: [SectionSnapshot<Layout>]) throws(ValidationFailure) {
         var sectionLocations = [AnyHashable: Int](minimumCapacity: sections.count)
         var cellLocations: [AnyHashable: ItemLocation] = [:]
         for (sectionIndex, section) in sections.enumerated() {
@@ -73,7 +73,7 @@ private extension CollectionSnapshot {
     }
 
     static func validateSupplementaries(
-        in section: SectionSnapshot,
+        in section: SectionSnapshot<Layout>,
         at sectionIndex: Int
     ) throws(ValidationFailure) {
         let sectionDescription = String(describing: section.id)

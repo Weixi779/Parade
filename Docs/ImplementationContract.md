@@ -1,24 +1,25 @@
 # Parade implementation contract
 
-This documents the development API as of 2026-09-28, including the unreleased
-section-controller naming and composable collection updates. The section model
-continues to support compositional layouts only.
+This documents the development API as of 2026-10-02, including typed layout
+integration, section-controller naming and composable collection updates. See
+[layout integration](LayoutIntegration.md) for concrete adapters and migration.
 
 ## Ownership and public input
 
 - The application creates `UICollectionView`. `CollectionOrchestrator` installs its
-  `UICollectionViewCompositionalLayout`, data source and delegate. There is no Flow
-  forwarding or alternate-layout mode.
+  selected native layout, data source and delegate. A collection has one `Layout`
+  association; Compositional and Flow are included, and custom integrations live outside core.
 - `SectionController` is a MainActor reference-type protocol: stable `id`, one stable
   `SectionUpdateContext`, and `captureContent()` with an associated output type.
   A section may own business requests/listeners. Its instance maps to one UIKit section.
 - `SectionContent` is an output protocol requiring cells, supplementary views and
-  `makeLayout(in:) -> NSCollectionLayoutSection`. The default supplementary list is empty.
-  `DefaultSectionContent` offers convenience storage without restricting custom outputs.
+  an associated `Layout` value through `@MainActor var layout`. The default supplementary
+  list is empty. `LayoutContent<Layout>` offers convenience storage. `Content.Layout`
+  must match the controller, collection, data source and store layout association.
 - Outputs and their cell/supplementary values must remain immutable after capture. Layout
-  methods use captured business inputs and the current UIKit environment, never live module state.
+  queries use captured business inputs and the current UIKit environment, never live module state.
 - `SectionSnapshot` erases concrete outputs for queued targets, completed baselines and
-  intermediate stages. It includes mandatory native layout construction and exposes
+  intermediate stages, while preserving their layout type. It includes a captured layout value and exposes
   `DiffableSection` to pure planning. Replacing stage cells preserves its metadata/layout.
 - Cell/supplementary identity, equality, registration, configuration, behavior replacement
   and optional interaction/display capabilities retain their existing responsibilities.
@@ -108,7 +109,7 @@ continues to support compositional layouts only.
 ## Data source and layout
 
 - Construction calls the `makeDataSource` factory once and retains its result. Custom sources
-  implement `CollectionDataSource`, including `layoutSection(at:environment:)`.
+  implement `CollectionDataSource`, including `sectionSnapshot(at:)`.
 - Source `apply` receives validated complete source/target snapshots and returns after
   all UIKit work and current queries describe target. It owns content/layout stage installation,
   invalidation and recovery. View creation uses supplied native registration providers.
@@ -145,3 +146,24 @@ global-conflict failure followed by success, atomic cell transfer, attachment re
 structural-stage layout identity, existing view lifecycles and both data-source implementations.
 Run the public-API IM/Store examples and their smoke checks. Local simulator results do not
 establish iOS 16 runtime behavior, device performance, or CI on a different Xcode toolchain.
+
+
+## Layout ownership
+
+- `CollectionLayout<Layout>` creates one native layout and one `CollectionLayoutDelegate`
+  per collection. Its factories run once. The orchestrator retains the delegate and the
+  collection retains the native layout; do not replace either installed object directly.
+- `LayoutAccess<Layout>` weakly references the orchestrator and queries the current data
+  source stage. After owner release queries return nil. Adapters must not query live Store
+  arrays for positions. The layout remains responsible for geometry and invalidation rules.
+- `CollectionLayoutDelegate` seals existing interaction/display/scroll callbacks and
+  forwards them to the internal, non-generic view bridge. Subclasses add layout queries,
+  including pure Swift protocols. Internal view binding is not a public extension surface.
+- `FlowSectionLayout` retains a lazily constructed native Flow delegate for one capture
+  and access. Use fresh payloads per capture, copying business settings before creation.
+  Only six Flow layout queries are dispatched; optional methods fall back to native defaults.
+- Custom data sources return a captured section for the same stage as their item counts,
+  IDs and presenters. They must invalidate after installing a changed layout version.
+  Pure sectioned diff algorithms remain independent of the layout type.
+- No automatic scroll-position preservation, mixed native layout families, or universal
+  third-party delegate forwarding is implied by this integration.

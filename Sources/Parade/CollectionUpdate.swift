@@ -6,19 +6,19 @@
 /// Each apply captures current section content before entering the collection's queue.
 /// The description retains its collection and sections; it is not a display snapshot.
 @MainActor
-public struct CollectionUpdate {
-    private let owner: CollectionOrchestrator
-    private let composition: [any SectionController]?
-    private var updatedSections: [any SectionController] = []
+public struct CollectionUpdate<Layout> {
+    private let owner: CollectionOrchestrator<Layout>
+    private let composition: [any SectionController<Layout>]?
+    private var updatedSections: [any SectionController<Layout>] = []
 
-    init(owner: CollectionOrchestrator, composition: [any SectionController]? = nil) {
+    init(owner: CollectionOrchestrator<Layout>, composition: [any SectionController<Layout>]? = nil) {
         self.owner = owner
         self.composition = composition
     }
 
     /// Includes these sections' current content in the update. Repeated calls accumulate;
     /// each instance is captured once. In a composition, selections must belong to its target.
-    public func updating(_ sections: [any SectionController]) -> Self {
+    public func updating(_ sections: [any SectionController<Layout>]) -> Self {
         var update = self
         var identities = Set(updatedSections.map { ObjectIdentifier($0) })
         update.updatedSections += sections.filter { identities.insert(ObjectIdentifier($0)).inserted }

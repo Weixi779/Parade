@@ -5,9 +5,10 @@ import Foundation
 /// A stable business module corresponding to one UICollectionView section.
 /// Own requests and listeners here; submit immutable display versions with update().
 @MainActor
-public protocol SectionController: AnyObject {
+public protocol SectionController<Layout>: AnyObject {
     associatedtype Id: Hashable
-    associatedtype Content: SectionContent
+    associatedtype Layout
+    associatedtype Content: SectionContent where Content.Layout == Layout
 
     var id: Id { get }
     var updateContext: SectionUpdateContext { get }

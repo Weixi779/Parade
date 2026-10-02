@@ -4,13 +4,13 @@
 
 import UIKit
 
-/// Coordinates stable section modules and their captured compositional layouts.
+/// Coordinates stable section modules and their captured section layouts.
 ///
 /// Retain the orchestrator for as long as the collection view is in use. Parade owns
 /// layout, data source and delegate. Sections own business state and submit captured
 /// presentation versions through their update context.
 @MainActor
-public final class CollectionOrchestrator {
+public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
     public let collectionView: UICollectionView
 
     public weak var scrollViewDelegate: (any UIScrollViewDelegate)?
@@ -18,7 +18,7 @@ public final class CollectionOrchestrator {
 
     /// Called after an entire submission has been applied, including supplementary views.
     /// It is safe to enqueue another update from this callback.
-    public var onDidApply: (@MainActor (CollectionOrchestrator) -> Void)?
+    public var onDidApply: (@MainActor (CollectionOrchestrator<Layout>) -> Void)?
     /// Receives recoverable problems after display state has settled and outside
     /// UIKit data-source callbacks. Submitting another update here is safe.
     public var onDiagnostic: (@MainActor (CollectionDiagnostic) -> Void)?
@@ -58,14 +58,15 @@ public final class CollectionOrchestrator {
 
     let registry = ViewRegistry()
     private let bridge: CollectionViewBridge
-    private let source: any CollectionDataSource
+    private let layoutDelegate: CollectionLayoutDelegate
+    let source: any CollectionDataSource<Layout>
     private var members: [ObjectIdentifier: Member] = [:]
     // View bindings use the destination attachment during an update. Notifications
     // settle after the transaction, so intermediate UIKit stages cannot flicker them.
     private var displayMembers: [AnyHashable: Member] = [:]
     private var isUpdatingDisplay = false
     private var displayedSections = Set<SectionDisplayIdentity>()
-    private var appliedSnapshot = CollectionSnapshot.empty
+    private var appliedSnapshot = CollectionSnapshot<Layout>.empty
     private let submissions: AsyncStream<Submission>.Continuation
     private var pendingCount = 0
     private var emptyView: UIView?
@@ -73,14 +74,13 @@ public final class CollectionOrchestrator {
     private var diagnostics: [CollectionDiagnostic] = []
     private var diagnosticDeliveryScheduled = false
 
-    /// Uses Parade's default data source with a replaceable sectioned diff algorithm.
     public convenience init(
         collectionView: UICollectionView,
-        configuration: UICollectionViewCompositionalLayoutConfiguration? = nil,
+        layout: CollectionLayout<Layout>,
         diffAlgorithm: any SectionedDiffAlgorithm = SectionedDiff()
     ) {
-        self.init(collectionView: collectionView, configuration: configuration) { view, cell, supplementary in
-            DefaultCollectionDataSource(
+        self.init(collectionView: collectionView, layout: layout) { view, cell, supplementary in
+            DefaultCollectionDataSource<Layout>(
                 collectionView: view,
                 cellProvider: cell,
                 supplementaryProvider: supplementary,
@@ -94,17 +94,22 @@ public final class CollectionOrchestrator {
     /// do not share it with another collection view or start updates in the factory.
     public init(
         collectionView: UICollectionView,
-        configuration: UICollectionViewCompositionalLayoutConfiguration? = nil,
+        layout: CollectionLayout<Layout>,
         makeDataSource: @MainActor (
             UICollectionView,
             @escaping CollectionCellProvider,
             @escaping CollectionSupplementaryProvider
-        ) -> any CollectionDataSource
+        ) -> any CollectionDataSource<Layout>
     ) {
         self.collectionView = collectionView
         let (stream, continuation) = AsyncStream<Submission>.makeStream(bufferingPolicy: .unbounded)
         submissions = continuation
+        let access = LayoutAccess<Layout>()
         let bridge = CollectionViewBridge(collectionView: collectionView)
+        let layoutDelegate = layout.makeDelegate(access)
+        precondition(layoutDelegate.bridge == nil, "Create a layout delegate for each collection")
+        self.layoutDelegate = layoutDelegate
+        layoutDelegate.bridge = bridge
         self.bridge = bridge
         let source = makeDataSource(
             collectionView,
@@ -115,14 +120,10 @@ public final class CollectionOrchestrator {
         )
         self.source = source
         bridge.owner = self
+        access.owner = self
         collectionView.dataSource = source.dataSource
-        collectionView.delegate = bridge
-        collectionView.setCollectionViewLayout(UICollectionViewCompositionalLayout(
-            sectionProvider: { [weak source] index, environment in
-                source?.layoutSection(at: index, environment: environment)
-            },
-            configuration: configuration ?? UICollectionViewCompositionalLayoutConfiguration()
-        ), animated: false)
+        collectionView.delegate = layoutDelegate
+        collectionView.setCollectionViewLayout(layout.makeLayout(access), animated: false)
         Task { @MainActor [weak self] in
             for await submission in stream {
                 guard let self else {
@@ -147,14 +148,14 @@ public final class CollectionOrchestrator {
     /// Describes the complete target membership and order without submitting it.
     /// New instances use content captured at apply; survivors keep their latest accepted
     /// content unless selected with updating(_:). Call apply() to perform the change.
-    public func compose(_ sections: [any SectionController]) -> CollectionUpdate {
-        CollectionUpdate(owner: self, composition: sections)
+    public func compose(_ sections: [any SectionController<Layout>]) -> CollectionUpdate<Layout> {
+        CollectionUpdate<Layout>(owner: self, composition: sections)
     }
 
     /// Describes a content update for attached sections without changing their order.
     /// Attachment is checked at apply, not while constructing the description.
-    public func update(_ sections: [any SectionController]) -> CollectionUpdate {
-        CollectionUpdate(owner: self).updating(sections)
+    public func update(_ sections: [any SectionController<Layout>]) -> CollectionUpdate<Layout> {
+        CollectionUpdate<Layout>(owner: self).updating(sections)
     }
 
     public func sectionId(at index: Int) -> AnyHashable? {
@@ -194,14 +195,14 @@ public final class CollectionOrchestrator {
     }
 
     private struct Submission {
-        let makeTarget: @MainActor (CollectionSnapshot) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot
+        let makeTarget: @MainActor (CollectionSnapshot<Layout>) throws(CollectionSnapshot<Layout>.ValidationFailure) -> CollectionSnapshot<Layout>
         let animated: Bool
         let mode: CollectionUpdateMode
         let didApply: @MainActor () -> Void
         let completion: @MainActor (Result<Void, CollectionUpdateError>) -> Void
 
         init(
-            makeTarget: @escaping @MainActor (CollectionSnapshot) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot,
+            makeTarget: @escaping @MainActor (CollectionSnapshot<Layout>) throws(CollectionSnapshot<Layout>.ValidationFailure) -> CollectionSnapshot<Layout>,
             animated: Bool,
             mode: CollectionUpdateMode,
             didApply: @escaping @MainActor () -> Void = {},
@@ -217,8 +218,8 @@ public final class CollectionOrchestrator {
 
     /// Both public apply forms and section-owned updates enter this capture boundary.
     func apply(
-        composition: [any SectionController]?,
-        updating sections: [any SectionController],
+        composition: [any SectionController<Layout>]?,
+        updating sections: [any SectionController<Layout>],
         animated: Bool,
         mode: CollectionUpdateMode,
         completion: @escaping @MainActor (Result<Void, CollectionUpdateError>) -> Void
@@ -229,14 +230,14 @@ public final class CollectionOrchestrator {
             if let incoming {
                 try validateMembership(incoming)
                 let candidates = Dictionary(uniqueKeysWithValues: incoming.map { ($0.identity, $0) })
-                selected = try sections.map { section throws(CollectionSnapshot.ValidationFailure) in
+                selected = try sections.map { section throws(CollectionSnapshot<Layout>.ValidationFailure) in
                     guard let member = candidates[ObjectIdentifier(section)] else {
                         throw failure(.sectionNotInComposition(String(describing: section.id)))
                     }
                     return member
                 }
             } else {
-                selected = try sections.map { section throws(CollectionSnapshot.ValidationFailure) in
+                selected = try sections.map { section throws(CollectionSnapshot<Layout>.ValidationFailure) in
                     guard let member = members[ObjectIdentifier(section)] else {
                         throw failure(.sectionNotAttached)
                     }
@@ -254,7 +255,7 @@ public final class CollectionOrchestrator {
         let captured = candidates.map { $0.captureSnapshot() }
         let selectedIdentities = Set(selected.map(\.identity))
         let selectedIndices = candidates.indices.filter { selectedIdentities.contains(candidates[$0].identity) }
-        do throws(CollectionSnapshot.ValidationFailure) {
+        do throws(CollectionSnapshot<Layout>.ValidationFailure) {
             try validateLocally(captured, at: selectedIndices)
             for index in selectedIndices {
                 let member = candidates[index]
@@ -268,7 +269,7 @@ public final class CollectionOrchestrator {
         }
 
         var accepted: [ObjectIdentifier: Member]?
-        submit(Submission(makeTarget: { baseline throws(CollectionSnapshot.ValidationFailure) in
+        submit(Submission(makeTarget: { baseline throws(CollectionSnapshot<Layout>.ValidationFailure) in
             guard let incoming else {
                 for member in selected {
                     guard self.members[member.identity] === member else {
@@ -276,11 +277,11 @@ public final class CollectionOrchestrator {
                     }
                 }
                 let replacements = Dictionary(uniqueKeysWithValues: captured.map { ($0.id, $0) })
-                return try CollectionSnapshot(baseline.sections.map { replacements[$0.id] ?? $0 })
+                return try CollectionSnapshot<Layout>(baseline.sections.map { replacements[$0.id] ?? $0 })
             }
 
             var next: [ObjectIdentifier: Member] = [:]
-            var contents: [SectionSnapshot] = []
+            var contents: [SectionSnapshot<Layout>] = []
             for (candidate, capture) in zip(incoming, captured) {
                 if let current = self.members[candidate.identity] {
                     guard current.id == candidate.id, let content = baseline.sectionsById[current.id] else {
@@ -294,7 +295,7 @@ public final class CollectionOrchestrator {
                     contents.append(capture)
                 }
             }
-            let target = try CollectionSnapshot(contents)
+            let target = try CollectionSnapshot<Layout>(contents)
             // Reserve only after the complete target is valid, before UIKit can suspend.
             for member in next.values where self.members[member.identity] == nil {
                 member.context.owner = member
@@ -308,7 +309,7 @@ public final class CollectionOrchestrator {
         }, completion: completion))
     }
 
-    private func validateMembership(_ incoming: [Member]) throws(CollectionSnapshot.ValidationFailure) {
+    private func validateMembership(_ incoming: [Member]) throws(CollectionSnapshot<Layout>.ValidationFailure) {
         var ids: [AnyHashable: Int] = [:]
         var contexts = Set<ObjectIdentifier>()
         for (index, member) in incoming.enumerated() {
@@ -399,7 +400,7 @@ public final class CollectionOrchestrator {
         }
     }
 
-    private func apply(_ target: CollectionSnapshot, animated: Bool, mode: CollectionUpdateMode) async {
+    private func apply(_ target: CollectionSnapshot<Layout>, animated: Bool, mode: CollectionUpdateMode) async {
         // Native registrations must exist before any data-source callback. Prepare
         // at execution so submissions from configure/display callbacks stay safe.
         for section in target.sections {
@@ -460,19 +461,19 @@ public final class CollectionOrchestrator {
         emptyView = nil
         previousBackgroundView = nil
     }
-    private func validateLocally(_ contents: [SectionSnapshot], at indices: [Int]) throws(CollectionSnapshot.ValidationFailure) {
+    private func validateLocally(_ contents: [SectionSnapshot<Layout>], at indices: [Int]) throws(CollectionSnapshot<Layout>.ValidationFailure) {
         var ids: [AnyHashable: Int] = [:]
         for index in indices {
             let content = contents[index]
             if let first = ids.updateValue(index, forKey: content.id) {
-                throw CollectionSnapshot.ValidationFailure(
+                throw CollectionSnapshot<Layout>.ValidationFailure(
                     .duplicateSectionId(String(describing: content.id)),
                     locations: [.init(section: first), .init(section: index)]
                 )
             }
-            do { _ = try CollectionSnapshot([content]) }
+            do { _ = try CollectionSnapshot<Layout>([content]) }
             catch {
-                throw CollectionSnapshot.ValidationFailure(
+                throw CollectionSnapshot<Layout>.ValidationFailure(
                     error.error,
                     locations: error.diagnostic.locations.map { .init(section: index, item: $0.item) }
                 )
@@ -481,14 +482,14 @@ public final class CollectionOrchestrator {
     }
 
     private func reject(
-        _ failure: CollectionSnapshot.ValidationFailure,
+        _ failure: CollectionSnapshot<Layout>.ValidationFailure,
         completion: @MainActor (Result<Void, CollectionUpdateError>) -> Void
     ) {
         report(failure.diagnostic)
         completion(.failure(failure.error))
     }
 
-    private func failure(_ error: CollectionUpdateError) -> CollectionSnapshot.ValidationFailure {
+    private func failure(_ error: CollectionUpdateError) -> CollectionSnapshot<Layout>.ValidationFailure {
         .init(error, locations: [])
     }
 
@@ -497,7 +498,7 @@ public final class CollectionOrchestrator {
         let id: AnyHashable
         let identity: ObjectIdentifier
         let context: SectionUpdateContext
-        let section: any SectionController
+        let section: any SectionController<Layout>
         let displayIdentity: SectionDisplayIdentity
         private var isAttached = false
         private var isCollectionVisible = false
@@ -506,7 +507,7 @@ public final class CollectionOrchestrator {
         private var isSectionDisplayed = false
         private var isNotifyingDisplay = false
 
-        init<S: SectionController>(_ section: S) {
+        init<S: SectionController<Layout>>(_ section: S) {
             id = AnyHashable(section.id)
             displayIdentity = SectionDisplayIdentity(sectionId: id)
             identity = ObjectIdentifier(section)
@@ -514,7 +515,9 @@ public final class CollectionOrchestrator {
             self.section = section
         }
 
-        func captureSnapshot() -> SectionSnapshot { SectionSnapshot(capturing: section) }
+        func captureSnapshot() -> SectionSnapshot<Layout> {
+            SectionSnapshot<Layout>(capturing: section)
+        }
 
         func attach() {
             (section as? any SectionAttachmentObserving)?.didAttach()

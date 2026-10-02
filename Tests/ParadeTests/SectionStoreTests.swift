@@ -9,7 +9,7 @@ import Testing
 struct SectionStoreTests {
     @Test("Even an empty composition reaches the caller's submission boundary")
     func emptyComposition() async throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         var submissions = 0
         let change = try await store.reconcile([]) { change in
             submissions += 1
@@ -28,7 +28,7 @@ struct SectionStoreTests {
     @Test("Definitions are lazy and creation does not also run the updater")
     func lazyCreation() throws {
         var creations = 0
-        let definition = SectionDefinition(id: "a", input: "initial", make: {
+        let definition = SectionDefinition<CompositionalSectionLayout>(id: "a", input: "initial", make: {
             creations += 1
             return Controller<Regular>("a", value: $0)
         }, update: { _, _ in
@@ -37,7 +37,7 @@ struct SectionStoreTests {
         #expect(definition.id == AnyHashable("a"))
         #expect(creations == 0)
 
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         let change = try store.reconcile([definition])
         let section = try #require(store.controllers.first as? Controller<Regular>)
         #expect(creations == 1)
@@ -51,13 +51,13 @@ struct SectionStoreTests {
 
     @Test("Reused instances keep local state and receive the current update closure")
     func retainedState() throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a", value: "first")])
         let section = try #require(store.controllers.first as? Controller<Regular>)
         section.isExpanded = true
 
         let change = try store.reconcile([
-            SectionDefinition(id: "a", input: "second", make: {
+            SectionDefinition<CompositionalSectionLayout>(id: "a", input: "second", make: {
                 Issue.record("Matching instances must not be reconstructed")
                 return Controller<Regular>("a", value: $0)
             }, update: { $0.value = "current closure: \($1)" }),
@@ -72,7 +72,7 @@ struct SectionStoreTests {
 
     @Test("Repeated input still reaches state that changed locally")
     func repeatedInput() async throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a", value: "server")])
         let section = try #require(store.controllers.first as? Controller<Regular>)
         section.value = "local edit"
@@ -92,10 +92,10 @@ struct SectionStoreTests {
 
     @Test("The same input type may feed different concrete controllers")
     func heterogeneousControllers() throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([
             definition("regular", value: "one"),
-            SectionDefinition(id: "featured", input: "two", make: {
+            SectionDefinition<CompositionalSectionLayout>(id: "featured", input: "two", make: {
                 Controller<Featured>("featured", value: $0)
             }, update: { $0.value = $1 }),
         ])
@@ -103,7 +103,7 @@ struct SectionStoreTests {
         let featured = try #require(store.controllers.last as? Controller<Featured>)
 
         let change = try store.reconcile([
-            SectionDefinition(id: "featured", input: "updated", make: {
+            SectionDefinition<CompositionalSectionLayout>(id: "featured", input: "updated", make: {
                 Controller<Featured>("featured", value: $0)
             }, update: { $0.value = $1 }),
             definition("regular", value: "also updated"),
@@ -119,12 +119,12 @@ struct SectionStoreTests {
 
     @Test("Changing controller type replaces the instance under the same ID")
     func controllerTypeReplacement() throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a")])
         let previous = try #require(store.controllers.first)
 
         let change = try store.reconcile([
-            SectionDefinition(id: "a", input: "replacement", make: {
+            SectionDefinition<CompositionalSectionLayout>(id: "a", input: "replacement", make: {
                 Controller<Featured>("a", value: $0)
             }, update: { _, _ in Issue.record("A replacement must be created, not updated") }),
         ])
@@ -140,12 +140,12 @@ struct SectionStoreTests {
 
     @Test("Changing input type replaces the association even with the same controller type")
     func inputTypeReplacement() throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a")])
         let previous = try #require(store.controllers.first)
 
         let change = try store.reconcile([
-            SectionDefinition(id: "a", input: 42, make: {
+            SectionDefinition<CompositionalSectionLayout>(id: "a", input: 42, make: {
                 Controller<Regular>("a", value: String($0))
             }, update: { _, _ in Issue.record("A different Input establishes a new association") }),
         ])
@@ -165,7 +165,7 @@ struct SectionStoreTests {
         MembershipCase(target: [], retained: [], removed: ["a", "b", "c"], structural: true),
     ])
     func membership(_ scenario: MembershipCase) throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a"), definition("b"), definition("c")])
         let previous = Dictionary(uniqueKeysWithValues: zip(store.ids, store.controllers))
 
@@ -183,11 +183,11 @@ struct SectionStoreTests {
 
     @Test("Duplicate IDs reject the entire input before any side effect", arguments: [false, true])
     func duplicateIds(useAsync: Bool) async throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a", value: "accepted")])
         let section = try #require(store.controllers.first as? Controller<Regular>)
-        let watched: (String) -> SectionDefinition = { id in
-            SectionDefinition(id: id, input: "rejected", make: {
+        let watched: (String) -> SectionDefinition<CompositionalSectionLayout> = { id in
+            SectionDefinition<CompositionalSectionLayout>(id: id, input: "rejected", make: {
                 Issue.record("Validation must finish before creating any instance")
                 return Controller<Regular>(id, value: $0)
             }, update: { _, _ in Issue.record("Validation must finish before updating any instance") })
@@ -212,7 +212,7 @@ struct SectionStoreTests {
 
     @Test("A removed identity gets a fresh instance when it returns")
     func reinsertion() throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a")])
         let previous = try #require(store.controllers.first as? Controller<Regular>)
         previous.isExpanded = true
@@ -229,8 +229,8 @@ struct SectionStoreTests {
 
     @Test("Store instances are independent even when they share definitions")
     func independentStores() throws {
-        let first = SectionStore()
-        let second = SectionStore()
+        let first = SectionStore<CompositionalSectionLayout>()
+        let second = SectionStore<CompositionalSectionLayout>()
         let definitions = [definition("a")]
         try first.reconcile(definitions)
         try second.reconcile(definitions)
@@ -244,10 +244,10 @@ struct SectionStoreTests {
 
     @Test("Inputs and closure captures are released after creation and reuse", arguments: [false, true])
     func releasesDefinitions(reuse: Bool) throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         if reuse {
             try store.reconcile([
-                SectionDefinition(id: "a", input: Reference(), make: { _ in
+                SectionDefinition<CompositionalSectionLayout>(id: "a", input: Reference(), make: { _ in
                     Controller<Regular>("a", value: "initial")
                 }, update: { _, _ in }),
             ])
@@ -263,7 +263,7 @@ struct SectionStoreTests {
             factoryCapture.value = factory
             updateCapture.value = updater
             try store.reconcile([
-                SectionDefinition(id: "a", input: model, make: { model in
+                SectionDefinition<CompositionalSectionLayout>(id: "a", input: model, make: { model in
                     Controller<Regular>("a", value: factory.value + model.value)
                 }, update: { section, model in
                     section.value = updater.value + model.value
@@ -279,7 +279,7 @@ struct SectionStoreTests {
 
     @Test("A change retains removed controllers only for the lifetime of the result")
     func removalLifetime() throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a")])
         let removed = try WeakReference(#require(store.controllers.first as? Controller<Regular>))
         do {
@@ -295,7 +295,7 @@ struct SectionStoreTests {
     func storeLifetime() throws {
         let reference = WeakReference()
         do {
-            let store = SectionStore()
+            let store = SectionStore<CompositionalSectionLayout>()
             try store.reconcile([definition("a")])
             reference.value = try #require(store.controllers.first as? Controller<Regular>)
             #expect(reference.value != nil)
@@ -305,7 +305,7 @@ struct SectionStoreTests {
 
     @Test("Suspended submission keeps accepted membership until completion")
     func suspendedAcceptance() async throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a", value: "old"), definition("b")])
         let a = try #require(store.controllers.first as? Controller<Regular>)
         let gate = SubmissionGate()
@@ -330,7 +330,7 @@ struct SectionStoreTests {
 
     @Test("Rejected structure preserves membership, not input mutations, and can be retried")
     func rejectedSubmission() async throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try store.reconcile([definition("a", value: "old"), definition("b")])
         let a = try #require(store.controllers.first as? Controller<Regular>)
         let b = try #require(store.controllers.last)
@@ -360,7 +360,7 @@ struct SectionStoreTests {
 
     @Test("Cancellation thrown by the submitter rejects membership and releases candidates")
     func cancelledSubmission() async throws {
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         let rejected = WeakReference()
         await #expect(throws: CancellationError.self) {
             try await store.reconcile([definition("a")]) { change in
@@ -374,13 +374,13 @@ struct SectionStoreTests {
         #expect(store.ids == [AnyHashable("a")])
     }
 
-    private func definition(_ id: String, value: String = "value") -> SectionDefinition {
-        SectionDefinition(id: id, input: value, make: {
+    private func definition(_ id: String, value: String = "value") -> SectionDefinition<CompositionalSectionLayout> {
+        SectionDefinition<CompositionalSectionLayout>(id: id, input: value, make: {
             Controller<Regular>(id, value: $0)
         }, update: { $0.value = $1 })
     }
 
-    private func ids(_ controllers: [any SectionController]) -> [String] {
+    private func ids(_ controllers: [any SectionController<CompositionalSectionLayout>]) -> [String] {
         controllers.map { String(describing: $0.id) }
     }
 }
@@ -408,8 +408,8 @@ private final class Controller<Kind>: SectionController {
         self.value = value
     }
 
-    func captureContent() -> DefaultSectionContent {
-        Issue.record("SectionStore must not capture or submit a presentation")
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        Issue.record("SectionStore<CompositionalSectionLayout> must not capture or submit a presentation")
         return testSectionContent(cells: [])
     }
 }

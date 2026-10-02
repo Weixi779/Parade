@@ -434,14 +434,14 @@ struct SectionUpdateTests {
     func stagedLayoutIdentity() throws {
         let a = Section("a", items: [1, 2])
         let b = Section("b", items: [3])
-        let oldA = SectionSnapshot(capturing: a)
-        let oldB = SectionSnapshot(capturing: b)
-        let source = try CollectionSnapshot([oldA, oldB])
+        let oldA = SectionSnapshot<CompositionalSectionLayout>(capturing: a)
+        let oldB = SectionSnapshot<CompositionalSectionLayout>(capturing: b)
+        let source = try CollectionSnapshot<CompositionalSectionLayout>([oldA, oldB])
         a.height = 90
         a.items = [2]
         b.items = [3, 1]
-        let target = try CollectionSnapshot([SectionSnapshot(capturing: b), SectionSnapshot(capturing: a)])
-        let plan = try CollectionUpdatePlan(from: source, to: target)
+        let target = try CollectionSnapshot<CompositionalSectionLayout>([SectionSnapshot<CompositionalSectionLayout>(capturing: b), SectionSnapshot<CompositionalSectionLayout>(capturing: a)])
+        let plan = try CollectionUpdatePlan<CompositionalSectionLayout>(from: source, to: target)
         for batch in plan.batches {
             for section in batch.sections {
                 #expect(section.layout === source.sectionsById[section.id]?.layout)
@@ -569,7 +569,7 @@ struct SectionUpdateTests {
         defer { window.isHidden = true }
         let detached = Signal()
         section.onDetach = { detached.send() }
-        var owner: CollectionOrchestrator? = CollectionOrchestrator(collectionView: view)
+        var owner: CollectionOrchestrator<CompositionalSectionLayout>? = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view)
         weak var weakOwner = owner
         owner?.isVisible = true
         try await owner?.compose([section]).apply(animated: false)
@@ -616,7 +616,7 @@ struct SectionUpdateTests {
         let section = Section("a", items: [1, 2])
         fixture.owner.isVisible = true
         try await fixture.owner.compose([section]).apply(animated: false)
-        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        let bridge = try #require((fixture.view.delegate as? CollectionLayoutDelegate)?.bridge)
         let firstPath = IndexPath(item: 0, section: 0)
         let lastPath = IndexPath(item: 1, section: 0)
         let first = try #require(fixture.view.cellForItem(at: firstPath))
@@ -644,7 +644,7 @@ struct SectionUpdateTests {
         try await fixture.owner.compose([section]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let kind = UICollectionView.elementKindSectionHeader
-        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        let bridge = try #require((fixture.view.delegate as? CollectionLayoutDelegate)?.bridge)
         let header = try #require(fixture.view.supplementaryView(forElementKind: kind, at: path))
         #expect(section.sectionDisplayEvents == [true])
         if hasCells {
@@ -689,7 +689,7 @@ struct SectionUpdateTests {
         try await fixture.owner.compose([old]).apply(animated: false)
         let path = IndexPath(item: 0, section: 0)
         let cell = try #require(fixture.view.cellForItem(at: path))
-        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        let bridge = try #require((fixture.view.delegate as? CollectionLayoutDelegate)?.bridge)
         // Keep an old display cycle pending while UIKit ends its own cycle.
         bridge.collectionView(fixture.view, willDisplay: cell, forItemAt: path)
         try await fixture.owner.compose([replacement]).apply(animated: false)
@@ -717,7 +717,7 @@ struct SectionUpdateTests {
         #expect(fixture.view.cellForItem(at: path) === cell)
         #expect(old.sectionDisplayEvents == [true, false])
         #expect(replacement.sectionDisplayEvents == [true])
-        let bridge = try #require(fixture.view.delegate as? CollectionViewBridge)
+        let bridge = try #require((fixture.view.delegate as? CollectionLayoutDelegate)?.bridge)
         bridge.collectionView(fixture.view, didEndDisplaying: cell, forItemAt: path)
         #expect(replacement.sectionDisplayEvents == [true, false])
     }
@@ -778,16 +778,19 @@ private struct Content: SectionContent {
     let height: CGFloat
     var supplementaryViews: [AnySupplementaryPresenter] = []
 
-    @MainActor
-    func makeLayout(in environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
-        let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height))
-        let section = NSCollectionLayoutSection(group: .vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)]))
-        if !supplementaryViews.isEmpty {
-            section.boundarySupplementaryItems = [NSCollectionLayoutBoundarySupplementaryItem(
-                layoutSize: size, elementKind: UICollectionView.elementKindSectionHeader, alignment: .top
-            )]
+    var layout: CompositionalSectionLayout {
+        CompositionalSectionLayout { _ in
+            let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height))
+            let section = NSCollectionLayoutSection(group: .vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)]))
+            if !supplementaryViews.isEmpty {
+                section.boundarySupplementaryItems = [NSCollectionLayoutBoundarySupplementaryItem(
+                    layoutSize: size,
+                    elementKind: UICollectionView.elementKindSectionHeader,
+                    alignment: .top
+                )]
+            }
+            return section
         }
-        return section
     }
 }
 
@@ -885,9 +888,11 @@ private final class Gate {
 
 @MainActor
 private final class ControlledSource: CollectionDataSource {
-    let base: any CollectionDataSource
+    let base: any CollectionDataSource<CompositionalSectionLayout>
     var gate: Gate?
-    init(_ base: any CollectionDataSource) { self.base = base }
+    init(_ base: any CollectionDataSource<CompositionalSectionLayout>) {
+        self.base = base
+    }
     var dataSource: any UICollectionViewDataSource { base.dataSource }
     var sectionIds: [AnyHashable] { base.sectionIds }
     var numberOfSections: Int { base.numberOfSections }
@@ -900,10 +905,10 @@ private final class ControlledSource: CollectionDataSource {
     func supplementaryPresenter(ofKind kind: String, at indexPath: IndexPath) -> AnySupplementaryPresenter? {
         base.supplementaryPresenter(ofKind: kind, at: indexPath)
     }
-    func layoutSection(at index: Int, environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? {
-        base.layoutSection(at: index, environment: environment)
+    func sectionSnapshot(at index: Int) -> SectionSnapshot<CompositionalSectionLayout>? {
+        base.sectionSnapshot(at: index)
     }
-    func apply(from source: CollectionSnapshot, to target: CollectionSnapshot, animated: Bool, mode: CollectionUpdateMode) async -> [CollectionDiagnostic] {
+    func apply(from source: CollectionSnapshot<CompositionalSectionLayout>, to target: CollectionSnapshot<CompositionalSectionLayout>, animated: Bool, mode: CollectionUpdateMode) async -> [CollectionDiagnostic] {
         if let gate { self.gate = nil; await gate.pause() }
         return await base.apply(from: source, to: target, animated: animated, mode: mode)
     }
@@ -912,7 +917,7 @@ private final class ControlledSource: CollectionDataSource {
 @MainActor
 private final class Fixture {
     let view: UICollectionView
-    let owner: CollectionOrchestrator
+    let owner: CollectionOrchestrator<CompositionalSectionLayout>
     let source: ControlledSource
     private let window: UIWindow
 
@@ -921,10 +926,10 @@ private final class Fixture {
         let view = UICollectionView(frame: frame, collectionViewLayout: UICollectionViewLayout())
         self.view = view
         var controlled: ControlledSource!
-        owner = CollectionOrchestrator(collectionView: view) { view, cell, supplementary in
-            let base: any CollectionDataSource = native
-                ? DiffableCollectionDataSource(collectionView: view, cellProvider: cell, supplementaryProvider: supplementary)
-                : DefaultCollectionDataSource(collectionView: view, cellProvider: cell, supplementaryProvider: supplementary)
+        owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view) { view, cell, supplementary in
+            let base: any CollectionDataSource<CompositionalSectionLayout> = native
+                ? DiffableCollectionDataSource<CompositionalSectionLayout>(collectionView: view, cellProvider: cell, supplementaryProvider: supplementary)
+                : DefaultCollectionDataSource<CompositionalSectionLayout>(collectionView: view, cellProvider: cell, supplementaryProvider: supplementary)
             let source = ControlledSource(base)
             controlled = source
             return source

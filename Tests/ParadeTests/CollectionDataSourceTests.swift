@@ -14,7 +14,7 @@ struct CollectionDataSourceTests {
         defer { fixture.window.isHidden = true }
         let probe = SourceProbe()
         var factories = 0
-        let owner = CollectionOrchestrator(collectionView: fixture.view) { view, cell, supplementary in
+        let owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: fixture.view) { view, cell, supplementary in
             factories += 1
             let source = ExternalDataSource(view: view, cell: cell, supplementary: supplementary, probe: probe)
             probe.source = source
@@ -58,18 +58,18 @@ struct CollectionDataSourceTests {
     func identityAndLifetime(native: Bool) async throws {
         let fixture = PublicFixture()
         defer { fixture.window.isHidden = true }
-        weak var retained: (any CollectionDataSource)?
+        weak var retained: (any CollectionDataSource<CompositionalSectionLayout>)?
         var factories = 0
-        var owner: CollectionOrchestrator? = CollectionOrchestrator(collectionView: fixture.view) {
+        var owner: CollectionOrchestrator<CompositionalSectionLayout>? = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: fixture.view) {
             view, cell, supplementary in
             factories += 1
-            let source: any CollectionDataSource
+            let source: any CollectionDataSource<CompositionalSectionLayout>
             if native {
-                source = DiffableCollectionDataSource(
+                source = DiffableCollectionDataSource<CompositionalSectionLayout>(
                     collectionView: view, cellProvider: cell, supplementaryProvider: supplementary
                 )
             } else {
-                source = DefaultCollectionDataSource(
+                source = DefaultCollectionDataSource<CompositionalSectionLayout>(
                     collectionView: view, cellProvider: cell, supplementaryProvider: supplementary
                 )
             }
@@ -113,7 +113,7 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
     let cell: CollectionCellProvider
     let supplementary: CollectionSupplementaryProvider
     let probe: SourceProbe
-    var content = CollectionSnapshot.empty
+    var content = CollectionSnapshot<CompositionalSectionLayout>.empty
 
     init(
         view: UICollectionView,
@@ -151,14 +151,14 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
         return content.sections[indexPath.section].supplementary(ofKind: kind, at: indexPath.item)
     }
 
-    func layoutSection(at index: Int, environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? {
+    func sectionSnapshot(at index: Int) -> SectionSnapshot<CompositionalSectionLayout>? {
         guard content.sections.indices.contains(index) else { return nil }
-        return content.sections[index].makeLayout(in: environment)
+        return content.sections[index]
     }
 
     func apply(
-        from source: CollectionSnapshot,
-        to target: CollectionSnapshot,
+        from source: CollectionSnapshot<CompositionalSectionLayout>,
+        to target: CollectionSnapshot<CompositionalSectionLayout>,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic] {
@@ -208,7 +208,9 @@ private final class PublicID: Hashable {
 @MainActor
 private final class PublicSection: SectionController {
     let updateContext = SectionUpdateContext()
-    func captureContent() -> DefaultSectionContent { testSectionContent(cells: cells) }
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        testSectionContent(cells: cells)
+    }
     let id: String
     let cells: [AnyCellPresenter]
     @MainActor

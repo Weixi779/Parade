@@ -8,21 +8,21 @@ struct CollectionSnapshotTests {
     @Test("Captured lookup values preserve section order and their original presenters")
     func lookupValues() throws {
         let sections = [section("b", cells: [2]), section("a", cells: [1, 3])]
-        let snapshot = try CollectionSnapshot(sections)
+        let snapshot = try CollectionSnapshot<CompositionalSectionLayout>(sections)
 
         #expect(snapshot.sections.map(\.id) == [AnyHashable("b"), AnyHashable("a")])
         #expect(snapshot.sectionsById["a"]?.cells == sections[1].cells)
         #expect(snapshot.cellsById[3] == sections[1].cells[1])
         #expect(snapshot.sectionsById.count == 2)
         #expect(snapshot.cellsById.count == 3)
-        let empty = try CollectionSnapshot([])
+        let empty = try CollectionSnapshot<CompositionalSectionLayout>([])
         #expect(empty.sections.isEmpty && empty.sectionsById.isEmpty && empty.cellsById.isEmpty)
     }
 
     @Test("Supplementary identities are scoped to section and kind")
     @MainActor
     func supplementaryScopes() throws {
-        let snapshot = try CollectionSnapshot([
+        let snapshot = try CollectionSnapshot<CompositionalSectionLayout>([
             section("a", views: [view("shared", kind: "header"), view("shared", kind: "footer")]),
             section("b", views: [view("shared", kind: "header")])
         ])
@@ -43,7 +43,7 @@ struct CollectionSnapshotTests {
     func rejection(input: InvalidInput) {
         let (sections, expected, locations) = invalidInput(input)
         do {
-            _ = try CollectionSnapshot(sections)
+            _ = try CollectionSnapshot<CompositionalSectionLayout>(sections)
             Issue.record("Expected invalid input rejection")
         } catch {
             #expect(error.error == expected)
@@ -55,7 +55,7 @@ struct CollectionSnapshotTests {
 
     @MainActor
     private func invalidInput(_ input: InvalidInput) -> (
-        [SectionSnapshot], CollectionUpdateError, [CollectionDiagnostic.Location]
+        [SectionSnapshot<CompositionalSectionLayout>], CollectionUpdateError, [CollectionDiagnostic.Location]
     ) {
         switch input {
         case .duplicateSection:
@@ -126,8 +126,8 @@ struct CollectionSnapshotTests {
         _ id: String,
         cells: [Int] = [],
         views: [AnySupplementaryPresenter] = []
-    ) -> SectionSnapshot {
-        SectionSnapshot(
+    ) -> SectionSnapshot<CompositionalSectionLayout> {
+        SectionSnapshot<CompositionalSectionLayout>(
             id: AnyHashable(id),
             cells: cells.map { AnyCellPresenter(IndexedCell(id: $0)) },
             supplementaryViews: views

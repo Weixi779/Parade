@@ -5,12 +5,12 @@ import UIKit
 /// Adapts Apple's diffable data source to the same captured presenters and view providers.
 /// Native snapshot diffing replaces Parade's sectioned algorithm on this path.
 @MainActor
-public final class DiffableCollectionDataSource: CollectionDataSource {
+public final class DiffableCollectionDataSource<Layout>: CollectionDataSource {
     private let collectionView: UICollectionView
     private let cellProvider: CollectionCellProvider
     private let supplementaryProvider: CollectionSupplementaryProvider
-    private var current = CollectionSnapshot.empty
-    private var previous = CollectionSnapshot.empty
+    private var current = CollectionSnapshot<Layout>.empty
+    private var previous = CollectionSnapshot<Layout>.empty
     private var sectionIdentifiers = NativeIdentifiers()
     private var itemIdentifiers = NativeIdentifiers()
 
@@ -64,11 +64,9 @@ public final class DiffableCollectionDataSource: CollectionDataSource {
         return native.index(for: token)
     }
 
-    public func layoutSection(
-        at index: Int, environment: any NSCollectionLayoutEnvironment
-    ) -> NSCollectionLayoutSection? {
+    public func sectionSnapshot(at index: Int) -> SectionSnapshot<Layout>? {
         guard let id = sectionId(at: index) else { return nil }
-        return (current.sectionsById[id] ?? previous.sectionsById[id])?.makeLayout(in: environment)
+        return current.sectionsById[id] ?? previous.sectionsById[id]
     }
 
     public func cellPresenter(at indexPath: IndexPath) -> AnyCellPresenter? {
@@ -91,8 +89,8 @@ public final class DiffableCollectionDataSource: CollectionDataSource {
     }
 
     public func apply(
-        from source: CollectionSnapshot,
-        to target: CollectionSnapshot,
+        from source: CollectionSnapshot<Layout>,
+        to target: CollectionSnapshot<Layout>,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic] {
@@ -110,7 +108,7 @@ public final class DiffableCollectionDataSource: CollectionDataSource {
         if mode == .reload || collectionView.window == nil {
             await native.applySnapshotUsingReloadData(snapshot)
         } else {
-            let content = CollectionContentUpdates(from: source, to: target)
+            let content = CollectionContentUpdates<Layout>(from: source, to: target)
             snapshot.reloadSections(content.reloadedSections.map {
                 sectionIdentifiers.insert(target.sections[$0].id)
             })

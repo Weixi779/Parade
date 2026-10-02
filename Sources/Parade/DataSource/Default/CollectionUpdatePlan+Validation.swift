@@ -7,8 +7,8 @@ extension CollectionUpdatePlan {
     /// Content equality remains the algorithm's responsibility.
     static func validate(
         _ changes: SectionedChanges,
-        from source: [SectionSnapshot],
-        to target: [SectionSnapshot],
+        from source: [SectionSnapshot<Layout>],
+        to target: [SectionSnapshot<Layout>],
         sourcePositions: CollectionPositions<AnyHashable, AnyHashable>,
         targetPositions: CollectionPositions<AnyHashable, AnyHashable>
     ) throws {
@@ -82,9 +82,9 @@ extension CollectionUpdatePlan {
     /// Replay actual batch operations against prior contents before touching UIKit.
     /// This catches valid-looking counts whose moves produce the wrong identities.
     static func validate(
-        _ batches: [CollectionBatch],
-        from source: [SectionSnapshot],
-        to target: [SectionSnapshot]
+        _ batches: [CollectionBatch<Layout>],
+        from source: [SectionSnapshot<Layout>],
+        to target: [SectionSnapshot<Layout>]
     ) throws {
         _ = try CollectionPositions(source, input: .source)
         _ = try CollectionPositions(target, input: .target)
@@ -108,8 +108,8 @@ extension CollectionUpdatePlan {
 
 private extension CollectionBatch {
     func replaying(
-        from source: [SectionSnapshot]
-    ) throws -> [SectionSnapshot] {
+        from source: [SectionSnapshot<Layout>]
+    ) throws -> [SectionSnapshot<Layout>] {
         try require(!isEmpty, "Empty batch")
         if !deletedSections.isEmpty || !insertedSections.isEmpty || !movedSections.isEmpty {
             try require(
@@ -118,7 +118,7 @@ private extension CollectionBatch {
             )
             let count = source.count - deletedSections.count + insertedSections.count
             try require(count >= 0 && sections.count == count, "Invalid section count")
-            var slots = [SectionSnapshot?](repeating: nil, count: count)
+            var slots = [SectionSnapshot<Layout>?](repeating: nil, count: count)
             var removed = Set<Int>()
             for origin in deletedSections {
                 try require(
@@ -144,7 +144,7 @@ private extension CollectionBatch {
             var retained = source.indices.filter { !removed.contains($0) }.makeIterator()
             for destination in slots.indices where slots[destination] == nil {
                 guard let origin = retained.next() else {
-                    throw CollectionUpdatePlan.ValidationError("Missing retained section")
+                    throw CollectionUpdatePlan<Layout>.ValidationError("Missing retained section")
                 }
                 slots[destination] = source[origin]
             }
@@ -194,7 +194,7 @@ private extension CollectionBatch {
                 item: item
             )) {
                 guard let origin = retained.next() else {
-                    throw CollectionUpdatePlan.ValidationError("Missing retained item")
+                    throw CollectionUpdatePlan<Layout>.ValidationError("Missing retained item")
                 }
                 slots[section][item] = source[section].cells[origin]
             }
@@ -207,17 +207,19 @@ private extension CollectionBatch {
 
 }
 
-private func sameIdentities(_ lhs: [SectionSnapshot], _ rhs: [SectionSnapshot]) -> Bool {
+private func sameIdentities<Layout>(_ lhs: [SectionSnapshot<Layout>], _ rhs: [SectionSnapshot<Layout>]) -> Bool {
     lhs.count == rhs.count && zip(lhs, rhs).allSatisfy {
         $0.id == $1.id && $0.cells.map(\.id) == $1.cells.map(\.id)
     }
 }
 
-private func contains(_ location: ItemLocation, in sections: [SectionSnapshot]) -> Bool {
+private func contains<Layout>(_ location: ItemLocation, in sections: [SectionSnapshot<Layout>]) -> Bool {
     sections.indices.contains(location.section) &&
         sections[location.section].cells.indices.contains(location.item)
 }
 
 private func require(_ condition: Bool, _ message: String) throws {
-    if !condition { throw CollectionUpdatePlan.ValidationError(message) }
+    if !condition {
+        throw CollectionPlanValidationError(message)
+    }
 }

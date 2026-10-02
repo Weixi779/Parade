@@ -11,27 +11,27 @@ import Foundation
 /// Serialize reconciliations, including across suspension in `reconcile(_:apply:)`.
 /// Neither definition closures nor the apply callback may reenter this store.
 @MainActor
-public final class SectionStore {
+public final class SectionStore<Layout> {
     /// Instance membership for one reconciliation, not an immutable display snapshot.
     /// Keeping a change alive also retains its controllers, including removed instances.
     @MainActor
     public struct Change {
         /// The complete target order, including new and retained instances.
-        public var controllers: [any SectionController] {
-            instances.map(\.controller)
+        public var controllers: [any SectionController<Layout>] {
+            instances.map { $0.controller }
         }
 
         /// Instances reused from the previous membership, in target order.
         /// Their business inputs have been updated; their presentations have not been submitted.
-        public let retained: [any SectionController]
+        public let retained: [any SectionController<Layout>]
 
         /// Instances absent from the target, in previous order. Includes same-ID replacements.
-        public let removed: [any SectionController]
+        public let removed: [any SectionController<Layout>]
 
         /// Whether instance membership or order changed. Content changes alone do not set this.
         public let hasStructuralChanges: Bool
 
-        fileprivate let instances: [any StoredSection]
+        fileprivate let instances: [any StoredSection<Layout>]
     }
 
     public init() {}
@@ -40,15 +40,15 @@ public final class SectionStore {
         orderedInstances.map(\.id)
     }
 
-    public var controllers: [any SectionController] {
-        orderedInstances.map(\.controller)
+    public var controllers: [any SectionController<Layout>] {
+        orderedInstances.map { $0.controller }
     }
 
     /// Accepts the resolved instances and order immediately, without submitting presentations.
     /// Duplicate IDs reject the entire input before any factory or update closure runs.
     /// Use the async overload when accepting membership must await an external submission.
     @discardableResult
-    public func reconcile(_ definitions: [SectionDefinition]) throws(CollectionUpdateError) -> Change {
+    public func reconcile(_ definitions: [SectionDefinition<Layout>]) throws(CollectionUpdateError) -> Change {
         let change = try resolve(definitions)
         accept(change)
         return change
@@ -65,7 +65,7 @@ public final class SectionStore {
     /// state and callback side effects are not rolled back.
     @discardableResult
     public func reconcile(
-        _ definitions: [SectionDefinition],
+        _ definitions: [SectionDefinition<Layout>],
         apply: @MainActor (Change) async throws -> Void
     ) async throws -> Change {
         let change = try resolve(definitions)
@@ -74,7 +74,7 @@ public final class SectionStore {
         return change
     }
 
-    private func resolve(_ definitions: [SectionDefinition]) throws(CollectionUpdateError) -> Change {
+    private func resolve(_ definitions: [SectionDefinition<Layout>]) throws(CollectionUpdateError) -> Change {
         var uniqueIds = Set<AnyHashable>()
         for definition in definitions {
             guard uniqueIds.insert(definition.id).inserted else {
@@ -88,8 +88,8 @@ public final class SectionStore {
         let previous = Set(previousIdentities)
         let incoming = Set(nextIdentities)
         return Change(
-            retained: next.filter { previous.contains(ObjectIdentifier($0.controller)) }.map(\.controller),
-            removed: orderedInstances.filter { !incoming.contains(ObjectIdentifier($0.controller)) }.map(\.controller),
+            retained: next.filter { previous.contains(ObjectIdentifier($0.controller)) }.map { $0.controller },
+            removed: orderedInstances.filter { !incoming.contains(ObjectIdentifier($0.controller)) }.map { $0.controller },
             hasStructuralChanges: previousIdentities != nextIdentities,
             instances: next
         )
@@ -100,6 +100,6 @@ public final class SectionStore {
         instancesById = Dictionary(uniqueKeysWithValues: change.instances.map { ($0.id, $0) })
     }
 
-    private var orderedInstances: [any StoredSection] = []
-    private var instancesById: [AnyHashable: any StoredSection] = [:]
+    private var orderedInstances: [any StoredSection<Layout>] = []
+    private var instancesById: [AnyHashable: any StoredSection<Layout>] = [:]
 }

@@ -22,7 +22,7 @@ public final class IMExampleViewController: UIViewController {
         frame: .zero,
         collectionViewLayout: UICollectionViewLayout()
     )
-    private lazy var orchestrator = CollectionOrchestrator(collectionView: collectionView)
+    private lazy var orchestrator = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: collectionView)
 
     public override func viewDidLoad() {
         super.viewDidLoad()
@@ -61,9 +61,9 @@ public final class AppStoreExampleViewController: UIViewController {
         collectionViewLayout: UICollectionViewLayout()
     )
     // This example injects Apple's implementation; the IM example uses Parade's default.
-    private lazy var orchestrator = CollectionOrchestrator(collectionView: collectionView) {
+    private lazy var orchestrator = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: collectionView) {
         view, cell, supplementary in
-        DiffableCollectionDataSource(
+        DiffableCollectionDataSource<CompositionalSectionLayout>(
             collectionView: view,
             cellProvider: cell,
             supplementaryProvider: supplementary
@@ -75,7 +75,7 @@ public final class AppStoreExampleViewController: UIViewController {
         title = "Discover"
         installCollectionView(collectionView, in: view)
         Task {
-            do { try await orchestrator.compose(sections).apply(animated: false) }
+            do { try await orchestrator.compose(sections.map { $0.collectionSection }).apply(animated: false) }
             catch { navigationItem.prompt = String(describing: error) }
         }
     }
@@ -117,7 +117,7 @@ public final class AppStoreExampleViewController: UIViewController {
             page.installedIds.insert(appId)
             for section in sections { section.installedIds = page.installedIds }
             Task {
-                do { try await orchestrator.update(sections).apply() }
+                do { try await orchestrator.update(sections.map { $0.collectionSection }).apply() }
                 catch { navigationItem.prompt = String(describing: error) }
             }
         }
@@ -266,8 +266,8 @@ private final class MessageDayController: SectionController {
         }
     }
 
-    func captureContent() -> DefaultSectionContent {
-        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        LayoutContent<CompositionalSectionLayout>(cells: cells, supplementaryViews: supplementaryViews) { _ in
             makeVerticalSection(estimatedHeight: 96, hasHeader: true)
         }
     }
@@ -301,8 +301,15 @@ private final class MessageDayController: SectionController {
 }
 
 @MainActor
-private protocol StoreSectionController: SectionController {
+private protocol StoreSectionController: SectionController where Layout == CompositionalSectionLayout {
     var installedIds: Set<String> { get set }
+}
+
+private extension StoreSectionController {
+    // Open each concrete conformance before erasing it to the collection's layout type.
+    var collectionSection: any SectionController<CompositionalSectionLayout> {
+        self
+    }
 }
 
 @MainActor
@@ -324,8 +331,8 @@ private final class FeaturedSectionController: StoreSectionController {
         self.open = open
     }
 
-    func captureContent() -> DefaultSectionContent {
-        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        LayoutContent<CompositionalSectionLayout>(cells: cells, supplementaryViews: supplementaryViews) { _ in
             let item = NSCollectionLayoutItem(layoutSize: .init(
                 widthDimension: .fractionalWidth(1),
                 heightDimension: .fractionalHeight(1)
@@ -382,8 +389,8 @@ private final class RankingSectionController: StoreSectionController {
         self.open = open
     }
 
-    func captureContent() -> DefaultSectionContent {
-        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        LayoutContent<CompositionalSectionLayout>(cells: cells, supplementaryViews: supplementaryViews) { _ in
             return makeVerticalSection(estimatedHeight: 92, hasHeader: true)
         }
     }
@@ -425,8 +432,8 @@ private final class RecommendationSectionController: StoreSectionController {
         self.open = open
     }
 
-    func captureContent() -> DefaultSectionContent {
-        DefaultSectionContent(cells: cells, supplementaryViews: supplementaryViews) { _ in
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        LayoutContent<CompositionalSectionLayout>(cells: cells, supplementaryViews: supplementaryViews) { _ in
             return makeVerticalSection(estimatedHeight: 130, hasHeader: true)
         }
     }

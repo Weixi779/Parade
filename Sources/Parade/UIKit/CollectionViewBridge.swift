@@ -2,6 +2,21 @@
 
 import UIKit
 
+/// The view bridge consumes presentation queries independently of the layout family.
+@MainActor
+protocol CollectionViewBridgeOwner: AnyObject {
+    var collectionView: UICollectionView { get }
+    var registry: ViewRegistry { get }
+    var eventHandler: (any CollectionEventHandler)? { get }
+    var scrollViewDelegate: (any UIScrollViewDelegate)? { get }
+    func sectionId(at index: Int) -> AnyHashable?
+    func sectionDisplayIdentity(for sectionId: AnyHashable?) -> SectionDisplayIdentity?
+    func cellPresenter(at indexPath: IndexPath) -> AnyCellPresenter?
+    func supplementaryPresenter(ofKind kind: String, at indexPath: IndexPath) -> AnySupplementaryPresenter?
+    func synchronizeSectionDisplay()
+    func report(_ diagnostic: CollectionDiagnostic)
+}
+
 /// A distinct attachment, retained by view bindings without retaining its section.
 /// Stable business IDs may be reused while old display callbacks are still pending.
 final class SectionDisplayIdentity: Hashable {
@@ -21,7 +36,7 @@ final class SectionDisplayIdentity: Hashable {
 final class CollectionViewBridge: NSObject,
     UICollectionViewDelegate
 {
-    weak var owner: CollectionOrchestrator?
+    weak var owner: (any CollectionViewBridgeOwner)?
 
     private var cells: [ObjectIdentifier: CellRecord] = [:]
     private var supplementaryViews: [ObjectIdentifier: SupplementaryRecord] = [:]

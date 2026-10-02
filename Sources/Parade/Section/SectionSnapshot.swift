@@ -7,16 +7,14 @@ import UIKit
 /// One section's captured display version, including its identity and content.
 /// Queued updates and data sources use snapshots instead of rereading a mutable controller.
 /// Structural batches can derive intermediate snapshots while retaining layout identity.
-public struct SectionSnapshot: DiffableSection {
+public struct SectionSnapshot<Layout>: DiffableSection {
     public let id: AnyHashable
     public let cells: [AnyCellPresenter]
     public let supplementaryViews: [AnySupplementaryPresenter]
-    let layout: SectionLayoutSnapshot
+    let layout: SectionLayoutSnapshot<Layout>
 
-    /// Resolves the layout of this captured version, including intermediate stages.
-    @MainActor
-    public func makeLayout(in environment: any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
-        layout.makeLayout(environment)
+    public var layoutValue: Layout {
+        layout.value
     }
 
     public var items: [AnyCellPresenter] { cells }
@@ -39,29 +37,29 @@ public struct SectionSnapshot: DiffableSection {
     }
 
     @MainActor
-    init<S: SectionController>(capturing section: S) {
+    init<S: SectionController<Layout>>(capturing section: S) {
         let content = section.captureContent()
         id = AnyHashable(section.id)
         cells = content.cells
         supplementaryViews = content.supplementaryViews
-        layout = SectionLayoutSnapshot(content)
+        layout = SectionLayoutSnapshot<Layout>(content.layout)
     }
 
     public init(
         id: AnyHashable,
         cells: [AnyCellPresenter] = [],
         supplementaryViews: [AnySupplementaryPresenter] = [],
-        layout: @escaping @MainActor (any NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection
+        layout: Layout
     ) {
         self.id = id
         self.cells = cells
         self.supplementaryViews = supplementaryViews
-        self.layout = SectionLayoutSnapshot(makeLayout: layout)
+        self.layout = SectionLayoutSnapshot<Layout>(layout)
     }
 
     private init(
         id: AnyHashable, cells: [AnyCellPresenter],
-        supplementaryViews: [AnySupplementaryPresenter], layout: SectionLayoutSnapshot
+        supplementaryViews: [AnySupplementaryPresenter], layout: SectionLayoutSnapshot<Layout>
     ) {
         self.id = id
         self.cells = cells

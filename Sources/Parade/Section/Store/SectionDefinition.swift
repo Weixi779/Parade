@@ -9,13 +9,13 @@ import Foundation
 /// Each reconciliation uses the current definition's closures. Inputs need not be
 /// Equatable: every retained instance receives its input, even if it appears unchanged.
 @MainActor
-public struct SectionDefinition {
+public struct SectionDefinition<Layout> {
     public let id: AnyHashable
 
     /// `make` receives the initial input; `update` runs only for a retained instance.
     /// Both must preserve the supplied ID. Use `update` to stage business state;
     /// presentation submission remains the caller's responsibility.
-    public init<Id: Hashable, Input, Controller: SectionController>(
+    public init<Id: Hashable, Input, Controller: SectionController<Layout>>(
         id: Id,
         input: Input,
         make: @escaping @MainActor (Input) -> Controller,
@@ -23,7 +23,7 @@ public struct SectionDefinition {
     ) where Controller.Id == Id {
         self.id = AnyHashable(id)
         resolve = { previous in
-            if let previous = previous as? SectionInstance<Input, Controller> {
+            if let previous = previous as? SectionInstance<Layout, Input, Controller> {
                 update(previous.value, input)
                 precondition(previous.value.id == id, "Updating a section must preserve its ID")
                 return previous
@@ -31,22 +31,23 @@ public struct SectionDefinition {
 
             let controller = make(input)
             precondition(controller.id == id, "Section and controller IDs must match")
-            return SectionInstance<Input, Controller>(controller)
+            return SectionInstance<Layout, Input, Controller>(controller)
         }
     }
 
-    let resolve: @MainActor ((any StoredSection)?) -> any StoredSection
+    let resolve: @MainActor ((any StoredSection<Layout>)?) -> any StoredSection<Layout>
 }
 
 @MainActor
-protocol StoredSection: AnyObject {
+protocol StoredSection<Layout>: AnyObject {
+    associatedtype Layout
     var id: AnyHashable { get }
-    var controller: any SectionController { get }
+    var controller: any SectionController<Layout> { get }
 }
 
 /// Retains the controller and its type association, never an input or definition closure.
 @MainActor
-private final class SectionInstance<Input, Controller: SectionController>: StoredSection {
+private final class SectionInstance<Layout, Input, Controller: SectionController<Layout>>: StoredSection {
     let id: AnyHashable
     let value: Controller
 
@@ -55,7 +56,7 @@ private final class SectionInstance<Input, Controller: SectionController>: Store
         self.value = value
     }
 
-    var controller: any SectionController {
+    var controller: any SectionController<Layout> {
         value
     }
 }

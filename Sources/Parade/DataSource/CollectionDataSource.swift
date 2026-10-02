@@ -14,20 +14,19 @@ public typealias CollectionSupplementaryProvider = @MainActor (
 
 /// Owns the current data and its UIKit updates for one collection view.
 ///
-/// Construct an instance using CollectionOrchestrator's makeDataSource closure.
+/// Construct an instance using CollectionOrchestrator<Layout>'s makeDataSource closure.
 /// Use the supplied providers for views; Parade keeps registration, delegate
 /// handling, view bindings and submission ordering. Do not replace the delegate.
 /// Start empty and submit updates only through the orchestrator.
 @MainActor
-public protocol CollectionDataSource: AnyObject {
+public protocol CollectionDataSource<Layout>: AnyObject {
+    associatedtype Layout
     /// The stable native object installed as UICollectionView.dataSource.
     var dataSource: any UICollectionViewDataSource { get }
 
-    /// Uses the same captured version and section indexing as the current views.
-    func layoutSection(
-        at index: Int,
-        environment: any NSCollectionLayoutEnvironment
-    ) -> NSCollectionLayoutSection?
+    /// The captured section at the same stage as the native counts and item queries.
+    /// Return nil for an invalid index; do not recapture a live controller here.
+    func sectionSnapshot(at index: Int) -> SectionSnapshot<Layout>?
 
     /// Queries describe the version currently used by the native data source,
     /// including intermediate stages. They must agree with its counts and views.
@@ -50,8 +49,8 @@ public protocol CollectionDataSource: AnyObject {
     /// Parade then refreshes behavior bindings and delivers public completion.
     /// Cancellation of the submitting task does not undo an accepted update.
     func apply(
-        from source: CollectionSnapshot,
-        to target: CollectionSnapshot,
+        from source: CollectionSnapshot<Layout>,
+        to target: CollectionSnapshot<Layout>,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic]

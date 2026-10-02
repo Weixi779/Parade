@@ -289,7 +289,7 @@ struct CollectionOrchestratorTests {
                   target.first?.items.count == 1 else { return changes }
             switch self {
             case .thrownError:
-                throw CollectionUpdatePlan.ValidationError("Injected algorithm failure")
+                throw CollectionUpdatePlan<CompositionalSectionLayout>.ValidationError("Injected algorithm failure")
             case .invalidCoordinate:
                 changes.deletedItems = [.init(section: 0, item: 99)]
             case .incompleteResult:
@@ -537,7 +537,7 @@ private final class TestSection: SectionController {
         self.supplementaryViews = supplementaryViews
     }
 
-    func captureContent() -> DefaultSectionContent {
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
         testSectionContent(cells: cells, supplementaryViews: supplementaryViews)
     }
 }
@@ -545,7 +545,9 @@ private final class TestSection: SectionController {
 @MainActor
 private final class MutableSection: SectionController {
     let updateContext = SectionUpdateContext()
-    func captureContent() -> DefaultSectionContent { testSectionContent(cells: cells) }
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        testSectionContent(cells: cells)
+    }
     let id: String
     var cells: [AnyCellPresenter]
     init(id: String, cells: [AnyCellPresenter]) {
@@ -650,7 +652,7 @@ private struct AlternateHeaderPresenter: SupplementaryPresenter {
 private final class CollectionFixture {
     let window: UIWindow
     let collectionView: RecordingCollectionView
-    let orchestrator: CollectionOrchestrator
+    let orchestrator: CollectionOrchestrator<CompositionalSectionLayout>
 
     init(
         headers: Bool = false,
@@ -712,7 +714,7 @@ private final class CollectionFixture {
 
 @MainActor
 private final class LayoutLookup {
-    weak var owner: CollectionOrchestrator?
+    weak var owner: CollectionOrchestrator<CompositionalSectionLayout>?
 }
 
 @MainActor
@@ -782,13 +784,13 @@ enum CollectionBackend: CaseIterable, Sendable {
     func orchestrator(
         for view: UICollectionView,
         diffAlgorithm: any SectionedDiffAlgorithm = SectionedDiff()
-    ) -> CollectionOrchestrator {
+    ) -> CollectionOrchestrator<CompositionalSectionLayout> {
         switch self {
         case .manual:
-            CollectionOrchestrator(collectionView: view, diffAlgorithm: diffAlgorithm)
+            CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view, diffAlgorithm: diffAlgorithm)
         case .native:
-            CollectionOrchestrator(collectionView: view) { view, cell, supplementary in
-                DiffableCollectionDataSource(
+            CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view) { view, cell, supplementary in
+                DiffableCollectionDataSource<CompositionalSectionLayout>(
                     collectionView: view, cellProvider: cell, supplementaryProvider: supplementary
                 )
             }

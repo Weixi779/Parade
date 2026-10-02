@@ -4,7 +4,7 @@ import UIKit
 
 /// Parade's default data source: replaceable sectioned diff and validated UIKit batches.
 @MainActor
-public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, UICollectionViewDataSource {
+public final class DefaultCollectionDataSource<Layout>: NSObject, CollectionDataSource, UICollectionViewDataSource {
     private let collectionView: UICollectionView
     private let cellProvider: CollectionCellProvider
     private let supplementaryProvider: CollectionSupplementaryProvider
@@ -12,7 +12,7 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
     private var sectionLocations: [AnyHashable: Int] = [:]
     private var cellLocations: [AnyHashable: IndexPath] = [:]
 
-    var sections: [SectionSnapshot] = [] {
+    var sections: [SectionSnapshot<Layout>] = [] {
         didSet {
             sectionLocations.removeAll(keepingCapacity: true)
             cellLocations.removeAll(keepingCapacity: true)
@@ -48,10 +48,8 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
     public func sectionIndex(for id: AnyHashable) -> Int? { sectionLocations[id] }
     public func indexPath(for id: AnyHashable) -> IndexPath? { cellLocations[id] }
 
-    public func layoutSection(
-        at index: Int, environment: any NSCollectionLayoutEnvironment
-    ) -> NSCollectionLayoutSection? {
-        section(at: index)?.makeLayout(in: environment)
+    public func sectionSnapshot(at index: Int) -> SectionSnapshot<Layout>? {
+        section(at: index)
     }
 
     public func cellPresenter(at indexPath: IndexPath) -> AnyCellPresenter? {
@@ -63,8 +61,8 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
     }
 
     public func apply(
-        from source: CollectionSnapshot,
-        to target: CollectionSnapshot,
+        from source: CollectionSnapshot<Layout>,
+        to target: CollectionSnapshot<Layout>,
         animated: Bool,
         mode: CollectionUpdateMode
     ) async -> [CollectionDiagnostic] {
@@ -74,9 +72,9 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
         }
         // UIKit must consume the previous counts before the first batch.
         collectionView.layoutIfNeeded()
-        let plan: CollectionUpdatePlan
+        let plan: CollectionUpdatePlan<Layout>
         do {
-            plan = try CollectionUpdatePlan(from: source, to: target, using: diffAlgorithm)
+            plan = try CollectionUpdatePlan<Layout>(from: source, to: target, using: diffAlgorithm)
         } catch {
             // Planning completes before mutating UIKit, so recovery installs target directly.
             reload(target)
@@ -156,11 +154,11 @@ public final class DefaultCollectionDataSource: NSObject, CollectionDataSource, 
         supplementaryProvider(collectionView, kind, indexPath, supplementaryPresenter(ofKind: kind, at: indexPath))
     }
 
-    private func section(at index: Int) -> SectionSnapshot? {
+    private func section(at index: Int) -> SectionSnapshot<Layout>? {
         sections.indices.contains(index) ? sections[index] : nil
     }
 
-    private func reload(_ target: CollectionSnapshot) {
+    private func reload(_ target: CollectionSnapshot<Layout>) {
         sections = target.sections
         collectionView.collectionViewLayout.invalidateLayout()
         collectionView.reloadData()

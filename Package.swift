@@ -18,7 +18,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "Parade"),
-        .testTarget(name: "ParadeTests", dependencies: ["Parade"]),
+        .target(name: "ParadeLayoutSupport", dependencies: ["Parade"], path: "Tests/LayoutSupport"),
+        .testTarget(name: "ParadeTests", dependencies: ["Parade", "ParadeLayoutSupport"]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -4,8 +4,8 @@ import Foundation
 
 /// One UIKit batch and the contents its data source must expose during that batch.
 /// Removal/move origins use the previous contents; destinations use `sections`.
-struct CollectionBatch {
-    var sections: [SectionSnapshot]
+struct CollectionBatch<Layout> {
+    var sections: [SectionSnapshot<Layout>]
     var deletedSections = IndexSet()
     var insertedSections = IndexSet()
     var movedSections: [(from: Int, to: Int)] = []

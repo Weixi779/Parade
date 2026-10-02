@@ -3,7 +3,7 @@
 import UIKit
 
 /// Fixed view-update rules shared by manual batches and native snapshots.
-struct CollectionContentUpdates {
+struct CollectionContentUpdates<Layout> {
     var reloadedSections = IndexSet()
     var replacedCells: [IndexPath] = []
     var reconfiguredCells: [IndexPath] = []
@@ -15,8 +15,8 @@ struct CollectionContentUpdates {
     }
 
     init(
-        from source: CollectionSnapshot,
-        to target: CollectionSnapshot,
+        from source: CollectionSnapshot<Layout>,
+        to target: CollectionSnapshot<Layout>,
         updatedSections: IndexSet? = nil,
         updatedItems: Set<ItemLocation>? = nil
     ) {

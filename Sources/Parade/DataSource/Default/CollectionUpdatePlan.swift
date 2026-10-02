@@ -2,13 +2,13 @@
 
 /// A complete update, constructed and validated before UIKit receives any edits.
 /// Batches retain source content; the final content phase installs the target.
-struct CollectionUpdatePlan {
-    let batches: [CollectionBatch]
-    let content: CollectionContentUpdates
+struct CollectionUpdatePlan<Layout> {
+    let batches: [CollectionBatch<Layout>]
+    let content: CollectionContentUpdates<Layout>
 
     init(
-        from source: CollectionSnapshot,
-        to target: CollectionSnapshot,
+        from source: CollectionSnapshot<Layout>,
+        to target: CollectionSnapshot<Layout>,
         using algorithm: any SectionedDiffAlgorithm = SectionedDiff()
     ) throws {
         let changes = try algorithm.diff(from: source.sections, to: target.sections)
@@ -25,13 +25,13 @@ struct CollectionUpdatePlan {
             let metadata = source.sectionsById[section.id] ?? section
             return metadata.replacingCells(section.cells.map { source.cellsById[$0.id] ?? $0 })
         }
-        var batches: [CollectionBatch] = []
+        var batches: [CollectionBatch<Layout>] = []
         var current = source.sections
 
         // Create new destinations before moving retained cells into them. Anchor
         // them before the next surviving section to avoid moves for plain inserts.
         if !changes.insertedSections.isEmpty {
-            var insertions = [[SectionSnapshot]](repeating: [], count: current.count + 1)
+            var insertions = [[SectionSnapshot<Layout>]](repeating: [], count: current.count + 1)
             var anchor = current.count
             for (index, section) in destinations.enumerated().reversed() {
                 if let origin = sourcePositions.sectionIndices[section.id] {
@@ -42,7 +42,7 @@ struct CollectionUpdatePlan {
                     }))
                 }
             }
-            var batch = CollectionBatch(sections: [])
+            var batch = CollectionBatch<Layout>(sections: [])
             for position in 0...current.count {
                 for section in insertions[position].reversed() {
                     batch.insertedSections.insert(batch.sections.count)
@@ -80,7 +80,7 @@ struct CollectionUpdatePlan {
                 targetPositions.itemLocations[$0.id] == nil
             })
         }
-        let itemBatch = CollectionBatch(
+        let itemBatch = CollectionBatch<Layout>(
             sections: itemContents,
             deletedItems: changes.deletedItems.filter {
                 !changes.deletedSections.contains($0.section)
@@ -96,7 +96,7 @@ struct CollectionUpdatePlan {
         }
 
         if current.map(\.id) != destinations.map(\.id) || !changes.movedSections.isEmpty {
-            var sectionBatch = CollectionBatch(
+            var sectionBatch = CollectionBatch<Layout>(
                 sections: destinations,
                 deletedSections: .init(changes.deletedSections.map {
                     sectionPositions[source.sections[$0].id]!
@@ -117,14 +117,18 @@ struct CollectionUpdatePlan {
 
         try Self.validate(batches, from: source.sections, to: target.sections)
         self.batches = batches
-        content = CollectionContentUpdates(
+        content = CollectionContentUpdates<Layout>(
             from: source, to: target,
             updatedSections: changes.updatedSections, updatedItems: Set(changes.updatedItems)
         )
     }
 
-    struct ValidationError: Error, CustomStringConvertible {
-        let description: String
-        init(_ description: String) { self.description = description }
+    typealias ValidationError = CollectionPlanValidationError
+}
+
+struct CollectionPlanValidationError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) {
+        self.description = description
     }
 }

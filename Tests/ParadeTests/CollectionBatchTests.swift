@@ -6,8 +6,8 @@ import Testing
 @testable import Parade
 
 struct CollectionBatchTests {
-    private typealias Section = SectionSnapshot
-    private typealias Batch = CollectionBatch
+    private typealias Section = SectionSnapshot<CompositionalSectionLayout>
+    private typealias Batch = CollectionBatch<CompositionalSectionLayout>
 
     @Test("Unchanged structure emits no batches, including retained empty sections")
     func unchanged() throws {
@@ -98,13 +98,13 @@ struct CollectionBatchTests {
             [Section(id: 0, items: [1]), Section(id: 1, items: [1])]
         ]
         for sections in invalid {
-            #expect(throws: CollectionSnapshot.ValidationFailure.self) {
+            #expect(throws: CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure.self) {
                 try plan(from: sections, to: [])
             }
-            #expect(throws: CollectionSnapshot.ValidationFailure.self) {
+            #expect(throws: CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure.self) {
                 try plan(from: [], to: sections)
             }
-            #expect(throws: CollectionSnapshot.ValidationFailure.self) {
+            #expect(throws: CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure.self) {
                 try plan(from: sections, to: sections)
             }
         }
@@ -250,9 +250,9 @@ struct CollectionBatchTests {
         to target: [Section],
         algorithm: any SectionedDiffAlgorithm = SectionedDiff()
     ) throws -> [Batch] {
-        try CollectionUpdatePlan(
-            from: CollectionSnapshot(source),
-            to: CollectionSnapshot(target),
+        try CollectionUpdatePlan<CompositionalSectionLayout>(
+            from: CollectionSnapshot<CompositionalSectionLayout>(source),
+            to: CollectionSnapshot<CompositionalSectionLayout>(target),
             using: algorithm
         ).batches
     }
@@ -268,7 +268,7 @@ struct CollectionBatchTests {
     @discardableResult
     private func verify(from source: [Section], to target: [Section]) throws -> [Batch] {
         let batches = try plan(from: source, to: target)
-        try CollectionUpdatePlan.validate(batches, from: source, to: target)
+        try CollectionUpdatePlan<CompositionalSectionLayout>.validate(batches, from: source, to: target)
         var current = source
         for batch in batches {
             let replayed = try replay(batch, from: current)
@@ -309,8 +309,8 @@ struct CollectionBatchTests {
             Batch(sections: source, insertedSections: IndexSet(integer: 99))
         ]
         for batch in invalid {
-            #expect(throws: CollectionUpdatePlan.ValidationError.self) {
-                try CollectionUpdatePlan.validate([batch], from: source, to: target)
+            #expect(throws: CollectionUpdatePlan<CompositionalSectionLayout>.ValidationError.self) {
+                try CollectionUpdatePlan<CompositionalSectionLayout>.validate([batch], from: source, to: target)
             }
         }
     }
@@ -339,7 +339,7 @@ struct CollectionBatchTests {
             )
         ]
         for changes in invalid {
-            #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+            #expect(throws: CollectionUpdatePlan<CompositionalSectionLayout>.ValidationError.self) {
                 try plan(for: changes, from: source, to: target)
             }
         }
@@ -347,7 +347,7 @@ struct CollectionBatchTests {
         let newContentUpdate = SectionedChanges(
             insertedSections: [0], updatedSections: [0], insertedItems: [.init(section: 0, item: 0)]
         )
-        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+        #expect(throws: CollectionUpdatePlan<CompositionalSectionLayout>.ValidationError.self) {
             try plan(for: newContentUpdate, from: [], to: inserted)
         }
         let newItemUpdate = SectionedChanges(
@@ -357,7 +357,7 @@ struct CollectionBatchTests {
                 item: 0
             )]
         )
-        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+        #expect(throws: CollectionUpdatePlan<CompositionalSectionLayout>.ValidationError.self) {
             try plan(for: newItemUpdate, from: [], to: inserted)
         }
     }
@@ -367,11 +367,11 @@ struct CollectionBatchTests {
         let source = [Section(id: 0, items: [1])]
         let target = [Section(id: 2, items: [1])]
         let incomplete = SectionedChanges(deletedSections: [0], insertedSections: [0])
-        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+        #expect(throws: CollectionUpdatePlan<CompositionalSectionLayout>.ValidationError.self) {
             try plan(for: incomplete, from: source, to: target)
         }
         let sections = [Section(id: 0, items: []), Section(id: 1, items: [])]
-        #expect(throws: CollectionUpdatePlan.ValidationError.self) {
+        #expect(throws: CollectionUpdatePlan<CompositionalSectionLayout>.ValidationError.self) {
             try plan(
                 for: SectionedChanges(),
                 from: sections,
@@ -385,7 +385,7 @@ struct CollectionBatchTests {
         let source = [Section(id: AnyHashable(nil as Int?), items: [nil, 1].map { AnyHashable($0 as Int?) })]
         let target = [Section(id: AnyHashable(nil as Int?), items: [1, nil].map { AnyHashable($0 as Int?) })]
         let batches = try plan(from: source, to: target)
-        try CollectionUpdatePlan.validate(batches, from: source, to: target)
+        try CollectionUpdatePlan<CompositionalSectionLayout>.validate(batches, from: source, to: target)
         #expect(batches.count == 1)
     }
 
@@ -541,7 +541,7 @@ private struct FixedDiff: SectionedDiffAlgorithm {
     }
 }
 
-private extension SectionSnapshot {
+private extension SectionSnapshot where Layout == CompositionalSectionLayout {
     init(id: AnyHashable, items: [AnyHashable]) {
         self.init(id: id, cells: items.map { AnyCellPresenter(BatchCell(id: $0)) })
     }
@@ -559,6 +559,6 @@ private struct BatchCell: CellPresenter {
 
 /// Independent identity projection for the replay oracle, with no production
 /// planning or validation helpers involved in computing its expected result.
-private func identities(_ sections: [SectionSnapshot]) -> [[AnyHashable]] {
+private func identities(_ sections: [SectionSnapshot<CompositionalSectionLayout>]) -> [[AnyHashable]] {
     sections.map { [$0.id] + $0.cellIds }
 }

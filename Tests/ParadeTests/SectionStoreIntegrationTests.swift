@@ -5,13 +5,13 @@ import Testing
 import UIKit
 
 @MainActor
-@Suite("SectionStore presentation integration", .timeLimit(.minutes(1)))
+@Suite("SectionStore<CompositionalSectionLayout> presentation integration", .timeLimit(.minutes(1)))
 struct SectionStoreIntegrationTests {
     @Test("Content-only reconciliation submits once and preserves visible cells and local state", arguments: CollectionBackend.allCases)
     func contentSubmission(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)
         defer { fixture.close() }
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try await store.reconcile([definition("a", items: [1], title: "old")]) { change in
             try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
@@ -45,7 +45,7 @@ struct SectionStoreIntegrationTests {
     func membershipSubmission(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)
         defer { fixture.close() }
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try await store.reconcile([
             definition("a", items: [1]), definition("b", items: [2]), definition("c", items: [3]),
         ]) { change in
@@ -87,14 +87,14 @@ struct SectionStoreIntegrationTests {
     func replacementSubmission(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)
         defer { fixture.close() }
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try await store.reconcile([definition("a", items: [1])]) { change in
             try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
         let previous = try #require(store.controllers.first as? Section<Regular>)
 
         let change = try await store.reconcile([
-            SectionDefinition(id: "a", input: Input(items: [2], title: "replacement"), make: {
+            SectionDefinition<CompositionalSectionLayout>(id: "a", input: Input(items: [2], title: "replacement"), make: {
                 Section<Featured>("a", input: $0)
             }, update: { $0.input = $1 }),
         ]) { change in
@@ -117,7 +117,7 @@ struct SectionStoreIntegrationTests {
     func rejectedStructure(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)
         defer { fixture.close() }
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try await store.reconcile([definition("a", items: [1])]) { change in
             try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
@@ -160,7 +160,7 @@ struct SectionStoreIntegrationTests {
     func rejectedContent(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)
         defer { fixture.close() }
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try await store.reconcile([definition("a", items: [1])]) { change in
             try await fixture.owner.compose(change.controllers).apply(animated: false)
         }
@@ -189,7 +189,7 @@ struct SectionStoreIntegrationTests {
     func atomicContentTransfer(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)
         defer { fixture.close() }
-        let store = SectionStore()
+        let store = SectionStore<CompositionalSectionLayout>()
         try await store.reconcile([
             definition("a", items: [1, 2]), definition("b", items: [3]),
         ]) { change in
@@ -210,8 +210,8 @@ struct SectionStoreIntegrationTests {
 
     private func definition(
         _ id: String, items: [Int], title: String = "value", height: CGFloat = 44
-    ) -> SectionDefinition {
-        SectionDefinition(id: id, input: Input(items: items, title: title, height: height), make: {
+    ) -> SectionDefinition<CompositionalSectionLayout> {
+        SectionDefinition<CompositionalSectionLayout>(id: id, input: Input(items: items, title: title, height: height), make: {
             Section<Regular>(id, input: $0)
         }, update: { $0.input = $1 })
     }
@@ -241,11 +241,11 @@ private final class Section<Kind>: SectionAttachmentObserving {
         self.input = input
     }
 
-    func captureContent() -> DefaultSectionContent {
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
         captures += 1
         let height = input.height
         let cells = input.items.map { AnyCellPresenter(Cell(id: $0, title: input.title)) }
-        return DefaultSectionContent(cells: cells) { _ in
+        return LayoutContent<CompositionalSectionLayout>(cells: cells) { _ in
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height))
             let item = NSCollectionLayoutItem(layoutSize: size)
             return NSCollectionLayoutSection(group: .vertical(layoutSize: size, subitems: [item]))
@@ -272,7 +272,7 @@ private struct Cell: CellPresenter {
 @MainActor
 private final class Fixture {
     let view: UICollectionView
-    let owner: CollectionOrchestrator
+    let owner: CollectionOrchestrator<CompositionalSectionLayout>
     private let window: UIWindow
 
     init(backend: CollectionBackend) {

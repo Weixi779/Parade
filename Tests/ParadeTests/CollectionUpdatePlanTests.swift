@@ -26,7 +26,7 @@ struct CollectionUpdatePlanTests {
             section("new", [cell(3, "new three"), cell(4, "four")], header: header("new section")),
             section("a", [cell(2, "new two"), cell(1, "one")], header: header("new header"))
         ])
-        let plan = try CollectionUpdatePlan(from: source, to: target)
+        let plan = try CollectionUpdatePlan<CompositionalSectionLayout>(from: source, to: target)
 
         #expect(plan.batches.count == 3)
         for batch in plan.batches {
@@ -63,7 +63,7 @@ struct CollectionUpdatePlanTests {
             section("a", [AnyCellPresenter(AlternateCell(id: 1))]),
             section("b", [AnyCellPresenter(AlternateCell(id: 2)), cell(3, "new")])
         ])
-        let plan = try CollectionUpdatePlan(from: source, to: target)
+        let plan = try CollectionUpdatePlan<CompositionalSectionLayout>(from: source, to: target)
 
         #expect(plan.batches.isEmpty)
         #expect(plan.content.reloadedSections == IndexSet(integer: 0))
@@ -84,7 +84,7 @@ struct CollectionUpdatePlanTests {
         let next = AnyCellPresenter(ActionCell(id: 1, title: "same", action: { actions.append(2) }))
         let source = try composition([section("s", [first])])
         let target = try composition([section("s", [next])])
-        let plan = try CollectionUpdatePlan(from: source, to: target)
+        let plan = try CollectionUpdatePlan<CompositionalSectionLayout>(from: source, to: target)
 
         #expect(first == next)
         #expect(plan.batches.isEmpty)
@@ -100,8 +100,8 @@ struct CollectionUpdatePlanTests {
     func independentBaselines() throws {
         let first = try composition([section("first", [cell(1, "first")])])
         let second = try composition([section("second", [cell(2, "second")])])
-        _ = try CollectionUpdatePlan(from: .empty, to: first)
-        let plan = try CollectionUpdatePlan(from: .empty, to: second)
+        _ = try CollectionUpdatePlan<CompositionalSectionLayout>(from: .empty, to: first)
+        let plan = try CollectionUpdatePlan<CompositionalSectionLayout>(from: .empty, to: second)
 
         #expect(plan.batches.count == 1)
         #expect(plan.batches.first?.insertedSections == IndexSet(integer: 0))
@@ -129,17 +129,17 @@ struct CollectionUpdatePlanTests {
     }
 
     private func composition(
-        _ sections: [SectionSnapshot]
-    ) throws(CollectionSnapshot.ValidationFailure) -> CollectionSnapshot {
-        try CollectionSnapshot(sections)
+        _ sections: [SectionSnapshot<CompositionalSectionLayout>]
+    ) throws(CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure) -> CollectionSnapshot<CompositionalSectionLayout> {
+        try CollectionSnapshot<CompositionalSectionLayout>(sections)
     }
 
     private func section(
         _ id: String,
         _ cells: [AnyCellPresenter],
         header: AnySupplementaryPresenter? = nil
-    ) -> SectionSnapshot {
-        SectionSnapshot(
+    ) -> SectionSnapshot<CompositionalSectionLayout> {
+        SectionSnapshot<CompositionalSectionLayout>(
             id: AnyHashable(id),
             cells: cells,
             supplementaryViews: header.map { [$0] } ?? []
@@ -167,12 +167,12 @@ private actor PlanningContext {
     ) {
         let old = AnyCellPresenter(ValueCell(id: 1, title: "old"))
         let same = AnyCellPresenter(ValueCell(id: 1, title: "old"))
-        let source = try CollectionSnapshot([SectionSnapshot(id: "section", cells: [old])])
-        let target = try CollectionSnapshot([SectionSnapshot(id: "section", cells: [
+        let source = try CollectionSnapshot<CompositionalSectionLayout>([SectionSnapshot<CompositionalSectionLayout>(id: "section", cells: [old])])
+        let target = try CollectionSnapshot<CompositionalSectionLayout>([SectionSnapshot<CompositionalSectionLayout>(id: "section", cells: [
             AnyCellPresenter(ValueCell(id: 2, title: "inserted")),
             AnyCellPresenter(ValueCell(id: 1, title: "updated"))
         ])])
-        let plan = try CollectionUpdatePlan(from: source, to: target)
+        let plan = try CollectionUpdatePlan<CompositionalSectionLayout>(from: source, to: target)
         return (
             old == same,
             plan.batches.count,
