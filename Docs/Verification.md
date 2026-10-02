@@ -1,5 +1,18 @@
 # Verification
 
+## Research cleanup — 2026-10-03
+
+Removed the temporary layout and scroll-position research harnesses, their source
+overlays, generated reports, and build artifacts. The maintained IM / Store and
+layout example projects remain. Layout runtime regressions remain in the
+public-import test suite; the standalone compiler checks now live at
+`Tests/check_layout_types.py`, with CI and documentation updated to that path.
+
+All five compiler checks passed after the move: one valid assembly and four expected
+compile failures. This cleanup did not change production or runtime test source;
+the full simulator suite was not rerun. Scroll-position experiments do not establish
+a supported automatic position-preservation API.
+
 ## Typed layout integration — 2026-10-02
 
 The final complete suite passed **147 tests in 13 suites**, with no failures or
