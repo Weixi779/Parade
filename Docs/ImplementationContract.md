@@ -1,7 +1,7 @@
 # Parade implementation contract
 
-This documents the development API as of 2026-10-02, including typed layout
-integration, section-controller naming and composable collection updates. See
+This documents the development API as of 2026-10-03, including replaceable data sources,
+typed layout integration, section-controller naming and composable collection updates. See
 [layout integration](LayoutIntegration.md) for concrete adapters and migration.
 
 ## Ownership and public input
@@ -19,11 +19,15 @@ integration, section-controller naming and composable collection updates. See
 - Outputs and their cell/supplementary values must remain immutable after capture. Layout
   queries use captured business inputs and the current UIKit environment, never live module state.
 - `SectionSnapshot` erases concrete outputs for queued targets, completed baselines and
-  intermediate stages, while preserving their layout type. It includes a captured layout value and exposes
-  `DiffableSection` to pure planning. Replacing stage cells preserves its metadata/layout.
+  intermediate stages, while preserving their layout type. It includes a captured layout value;
+  an adapter alongside the staged implementation supplies `DiffableSection` to pure planning.
+  Replacing stage cells preserves its metadata/layout version.
 - Cell/supplementary identity, equality, registration, configuration, behavior replacement
   and optional interaction/display capabilities retain their existing responsibilities.
   Their erasers retain the original presenters; the layout contract does not use capability casts.
+- Cell and supplementary presenter protocols own `Id`, `id` and `Equatable` directly.
+  They do not inherit `DiffableElement`. Model operations expose view compatibility,
+  supplementary content/compatibility and layout-version comparison to all data sources.
 
 ## Operations
 
@@ -109,11 +113,17 @@ integration, section-controller naming and composable collection updates. See
 ## Data source and layout
 
 - Construction calls the `makeDataSource` factory once and retains its result. Custom sources
-  implement `CollectionDataSource`, including `sectionSnapshot(at:)`.
+  implement `CollectionDataSource`, including `sectionSnapshot(at:)`. The factory receives
+  `(UICollectionView, CollectionViews)`; both belong to this collection only.
 - Source `apply` receives validated complete source/target snapshots and returns after
   all UIKit work and current queries describe target. It owns content/layout stage installation,
-  invalidation and recovery. View creation uses supplied native registration providers.
-- The default source plans all structure before mutation. Manual structural batches retain
+  invalidation and recovery. Native dequeue callbacks use the supplied `CollectionViews`.
+- After target installation, `CollectionViews.reconfigureSupplementaries(_:)` configures
+  existing compatible views at target coordinates and invalidates layout once if any changed.
+  Identity, placement or view-type changes require the source's reload path. Behavior binding
+  remains the orchestrator's final step after source `apply`; equal visual content still rebinds.
+  The views object retains neither source nor orchestrator and stores no snapshot history.
+- `StagedCollectionDataSource` plans all structure before mutation. Manual structural batches retain
   source metadata/layout for surviving sections and target metadata/layout for new sections.
   The final content phase installs target metadata/layout. Layout-only updates perform a
   layout invalidation batch without forcing cell visual reconfiguration.
@@ -121,6 +131,7 @@ integration, section-controller naming and composable collection updates. See
   fallback during application. It invalidates and resolves the settled layout before returning.
 - New captured layout versions invalidate even if cells are equal. No equality is required
   for UIKit layout objects or closures. Layout builders must handle empty/staged item counts.
+  `hasSameLayoutVersion(as:)` compares capture identity; `replacingCells(_:)` keeps it.
 - Planning failures reload an independently validated target before issuing any invalid batch.
   Diagnostics are delivered outside dequeue callbacks. Missing views use inert native fallbacks.
 

@@ -12,7 +12,7 @@
 | [CollectionLayout](../Sources/Parade/Layout/CollectionLayout.swift) | 创建原生 layout 和布局 delegate；`LayoutAccess` 查询当前展示阶段。 |
 | [CollectionLayoutDelegate](../Sources/Parade/Layout/CollectionLayoutDelegate.swift) | 供外部布局扩展；将既有交互、显示、滚动回调转交内部 bridge。 |
 | [FlowSectionLayout](../Sources/Parade/Layout/FlowSectionLayout.swift) | 在对应 Section 的具体 Flow delegate 上调用原生尺寸与间距查询。 |
-| [CollectionOrchestrator](../Sources/Parade/CollectionOrchestrator.swift) | 安装上述对象，保留既有提交队列和绑定流程。 |
+| [CollectionOrchestrator](../Sources/Parade/Collection/CollectionOrchestrator.swift) | 安装上述对象，保留既有提交队列和绑定流程。 |
 
 `Controller → Content → Snapshot → DataSource → Orchestrator` 都携带同一个 `Layout`，`CollectionUpdate`、`SectionStore` 和更新计划也如此。具体 Controller / Content 在内部被擦除，布局类型关联仍被编译器检查。纯 `SectionedDiffAlgorithm` 不认识布局，算法协议与实现没有变化。
 

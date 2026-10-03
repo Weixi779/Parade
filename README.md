@@ -210,7 +210,8 @@ or other business work, the application can assign a `UICollectionViewDataSource
 object to `collectionView.prefetchDataSource`. Parade does not install one or provide
 Section working-range callbacks.
 
-`CellPresenter` and `SupplementaryPresenter` inherit `DiffableElement: Equatable`.
+`CellPresenter` and `SupplementaryPresenter` each declare their own hashable `Id`
+and `id`, and conform to `Equatable`. They do not inherit an algorithm input protocol.
 Identity matches occurrences; standard `==` decides whether matched values need
 visual reconfiguration. The simple presenter above uses synthesized equality.
 When a presenter stores closures, implement `static func == (lhs: Self, rhs: Self) -> Bool` using its presentation fields. Do not implement equality using
@@ -369,11 +370,10 @@ another implementation, inject it at construction:
 
 ```swift
 let orchestrator = CollectionOrchestrator(collectionView: collectionView) {
-    view, cell, supplementary in
+    view, views in
     DiffableCollectionDataSource(
         collectionView: view,
-        cellProvider: cell,
-        supplementaryProvider: supplementary
+        views: views
     )
 }
 ```
@@ -388,8 +388,9 @@ and submit updates only through the orchestrator.
 
 A custom implementation supplies three things:
 
-- The stable native `UICollectionViewDataSource`, using the supplied cell and
-  supplementary providers for dequeue, configuration, and binding.
+- The stable native `UICollectionViewDataSource`, using the supplied `CollectionViews`
+  for dequeue, configuration, and binding. Call `views.cell(at:presenter:)` or
+  `views.supplementary(ofKind:at:presenter:)` from the corresponding UIKit request.
 - Current section/item counts, identity-position queries, presenter lookup, captured
   section layout construction, and empty-content status. These must agree with UIKit
   during intermediate updates.
@@ -407,6 +408,26 @@ Custom implementations own their content-update policy; they may conservatively
 reload changed content. The two supplied implementations share Parade's fixed
 replacement, reconfiguration, and supplementary update rules internally.
 
+For granular updates, compare identity first, then use these public model operations:
+
+- `AnyCellPresenter.canReuseView(with:)` and its supplementary counterpart check
+  concrete view compatibility; standard `==` checks visual content separately.
+- `SectionSnapshot.hasCompatibleSupplementaries(with:)` checks the complete set's
+  identities, placements and view types. `hasSameSupplementaryContent(as:)` compares
+  identities and content at each placement, excluding cells and layout.
+- `hasSameLayoutVersion(as:)` checks capture identity, not equal geometry. A derived
+  snapshot made with `replacingCells(_:)` retains the same layout version.
+
+After installing target data, a source can call
+`views.reconfigureSupplementaries(updates)` with changed compatible supplementary
+presenters at target index paths. It refreshes existing views and invalidates layout
+once for the batch; it does not create offscreen views. Incompatible identities,
+placements or view types require a reload. The orchestrator refreshes behavior
+bindings after source `apply` returns, including when visual content is unchanged.
+Keep the supplied `CollectionViews` with that one source; applications do not create
+it themselves. See the [public-import implementation and tests](Tests/ParadeTests/CollectionDataSourceTests.swift)
+for content updates, replacement and ownership checks.
+
 The Apple adapter uses native snapshots for structural updates and position lookup.
 It translates the existing hashable identities to stable native integer identifiers,
 so presenters do not acquire `Sendable` constraints. Content changes are marked
@@ -415,7 +436,7 @@ MainActor. Neither includes background diff scheduling.
 
 ## Replacing the diff algorithm
 
-Within `DefaultCollectionDataSource`, `SectionedDiff` compares complete sections and
+Within `StagedCollectionDataSource`, `SectionedDiff` compares complete sections and
 their items. Supply another `SectionedDiffAlgorithm` through the convenience initializer:
 
 ```swift
@@ -431,8 +452,9 @@ policy. The Apple data source path uses Apple's diff and does not use this slot.
 An implementation receives `[Section: DiffableSection]` for both input versions.
 Section identity and `isContentEqual(to:)` describe the section itself; `items`
 provide `DiffableElement` identity and content equality. Section comparison excludes
-item content. Captured Parade data already supplies this contract, so existing
-section/cell/supplementary presenter protocols need no changes.
+item content. The staged implementation adapts `SectionSnapshot` and `AnyCellPresenter`
+to these input protocols. Presenter protocols remain independent of the algorithm;
+a custom algorithm needs no change to business presenters.
 
 Return `SectionedChanges` in original source/target coordinates. Deletions use source
 positions; insertions and updates use target positions; moves contain both. Include

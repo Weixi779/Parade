@@ -6,7 +6,7 @@ Podcast 提供真实使用场景，Parade 仍负责定义通用的框架契约�
 
 ## 适用版本与接入位置
 
-本次核对日期为 **2026-10-02**。Parade 对照的是 `03812f11` public API 整理及后续正式布局实现，属于未发布开发 API；Podcast 对照的是本地 `3eaa6a714` 工作区的实际文件。执行迁移时须重新确认两边版本，不把本文当作已发布 1.0 的能力清单。
+Parade 契约更新至 **2026-10-03** 的 DataSource 解耦重构，包含此前 public API 整理及正式布局实现，属于未发布开发 API。Podcast 最后一次源码核对为 **2026-10-02**，对照本地 `3eaa6a714` 工作区；本轮没有重新核对或修改 Podcast。执行迁移时须重新确认两边版本，不把本文当作已发布 1.0 的能力清单。
 
 Podcast 的 Home 代码当前导入 `XYZFoundationUI`，Collection 实现在该仓库的 `Submodules/XYZFoundationUI/Sources/XYZFoundationUI/Collection/` 中。其 Package 当前没有外部依赖。因此，单独升级 Parade 包版本不会自动迁移这份实现：应先确认继续同步源码，还是调整模块依赖，再迁移调用方。
 
@@ -24,6 +24,9 @@ Podcast 的 Home 代码当前导入 `XYZFoundationUI`，Collection 实现在该�
 | `orchestrator.setVisible(flag)` | `orchestrator.isVisible = flag` | 保留调用时机及原有可见性判断。 |
 | Presenter 的 `setBehaviors(_:)` | `bind(to:)` | Cell、Supplementary 的实现和手动调用都要改。 |
 | `orchestrator.logger` | `onDiagnostic` / `onDidApply` | 若其他调用方有使用，分别记录问题和成功提交；合并现有回调职责，不覆盖已有处理。成功日志的时机改为完整提交结束后。 |
+| `DefaultCollectionDataSource` | `StagedCollectionDataSource` | 只影响显式类型引用；普通 `CollectionOrchestrator(collectionView:)` 构造保持不变。 |
+| DataSource 工厂的 `view, cell, supplementary` 与两种 provider 参数 | `view, views` 与 `views: views` | 自研实现保留 `CollectionViews`，通过它创建视图和批量刷新兼容的 Supplementary。 |
+| 泛型 helper 假定任意 Presenter 都是 `DiffableElement` | 约束相应 Presenter 协议，或显式适配算法输入 | Presenter 自己定义身份与 `Equatable`；普通业务实现的 `id`、`==`、`configure`、`bind` 保持不变。 |
 
 业务 Section 的 `setSection(_:)`、普通 View 的 `setBehaviors(onDismiss:...)` 并不是上述框架接口，不应全局机械替换。业务方法命名可另行整理。
 
@@ -118,11 +121,26 @@ Shortcut 的实现位于 `Podcast/App/Features/Home/Featured/Sections/Shortcut/P
 | 议题 | 当前状态 | 届时要回答的 Podcast 迁移问题 |
 | --- | --- | --- |
 | Flow Layout / 自定义 `UICollectionViewLayout` | 正式开发 API 已实现，见下方迁移说明和 [布局契约](LayoutIntegration.md)；尚未迁移 Podcast | 核对实际自建 Collection 的协议和回调，确定适配代码可删范围；每个 Section 只提供自己所属布局类型，不要求写两套。 |
-| Diff 算法和 DataSource 的命名、可替换边界 | 已有替换能力；默认实现与核心的模块边界、共享更新规则和最终命名仍待讨论 | 调用方使用默认实现、自研算法或自研 DataSource 时各需迁移什么；替换前后如何验证一致性。 |
+| Diff 算法和 DataSource 的命名、可替换边界 | 已完成本轮职责解耦；`StagedCollectionDataSource`、`CollectionViews` 和公开模型判断已实现，仍为同一个 target | 按下方说明迁移工厂和泛型约束；实际删除范围需在 Podcast 接入时确认。 |
 | 滚动位置保持 | 尚无可交付的自动保持 API | 在实际支持的布局和更新场景中，哪些位置记录/恢复代码可删除；哪些仍由业务布局处理。 |
 | 队列空闲通知 | 讨论项，尚未增加 API | 是否确实能简化 pending render，先给出已实现契约和使用证据。 |
 
 后续每落地一项变更，在本文补齐“框架契约 → Podcast 调用位置 → 必改项 / 可删除代码 → 必须保留的业务行为 → 验证结果”。未经实现和验证的讨论保持待定，不写成升级收益。
+
+## DataSource 重构的必改项与可简化项
+
+框架仍只有 `Parade` 一个模块，先按物理目录分离职责，没有新增包依赖或转导出层。`SectionedDiff` 与 `SectionedDiffAlgorithm` 保持名称和计算契约。普通 Home Section、Cell / Header Presenter、Store 和提交链无需因本轮重构再改一套写法。
+
+若继续同步 `Submodules/XYZFoundationUI/Sources/XYZFoundationUI/Collection/` 中的实现，应同步本轮职责调整；不能只把默认 DataSource 文件改名。若改成外部包依赖，再按实际调用方是否自建 DataSource 区分迁移范围：
+
+- **必改：** 显式默认实现改为 `StagedCollectionDataSource`；自定义工厂接收 `view, views`，两种内置实现都用 `views:`。自研 DataSource 的 UIKit 回调调用 `views.cell(at:presenter:)` 与 `views.supplementary(ofKind:at:presenter:)`。删除原 provider 闭包存储。
+- **泛型约束：** Presenter 不再继承算法协议，具体业务实现通常无需修改。只在确实将 Presenter 交给独立算法的 helper 中补适配；不要为保持旧继承关系又给整个 Presenter 层挂回 diff 协议。
+- **可合并的重复判断：** 自研 DataSource 若复制了 Cell / Header 视图类型比较、Supplementary 身份/位置兼容判断或 layout 捕获版本判断，可改用模型公开方法。兼容 Header 的视觉刷新可集中交给 `views.reconfigureSupplementaries(_:)`，无需复制内部 `configure` 与布局失效逻辑。这是接入时的检查项，尚未确认 Podcast 存在每一种重复实现。
+- **必须保留：** 自研 DataSource 的阶段安装、结构差异处理、reload 决策、布局失效和完成时机；业务渲染合并、Shortcut 动画准备与失败清理也继续保留。`CollectionViews` 不负责制定更新策略，框架的最终行为重绑仍在 DataSource `apply` 返回后执行。
+
+外部 DataSource 只能把身份、位置和视图类型均兼容的 Supplementary 交给批量刷新，使用已安装目标数据的坐标。仅行为变化不应伪装成视觉变化；最终绑定步骤会安装新的回调。`hasSameLayoutVersion(as:)` 比较一次捕获的身份，不能用业务高度恰好相等替代；`replacingCells(_:)` 才会保留原捕获版本。
+
+Parade 的公开消费者测试已验证局部内容更新、兼容视图保留、Cell / Header 类型替换、仅布局变化、等内容重绑，以及 Source / `CollectionViews` 释放。它没有迁移或构建 Podcast；接入时须对真实自研实现逐项核对，不能把测试中的简化 DataSource 当作完整结构更新算法复制。
 
 ## 布局开发 API 的必改项与可简化项
 
@@ -141,6 +159,7 @@ Shortcut 的实现位于 `Podcast/App/Features/Home/Featured/Sections/Shortcut/P
 
 - [ ] 记录实际升级到的 Parade revision/tag，以及 Podcast 的同步方式和 revision；确认内嵌实现包含新的 reconcile 语义。
 - [ ] 搜索旧协议、属性、提交入口和绑定方法，逐项区分框架调用与同名业务方法；所有目标平台通过编译。
+- [ ] 若使用自研 DataSource，核对 `CollectionViews` 接入、泛型约束和当前阶段查询；覆盖兼容视图内容刷新、同 ID 更换视图类型、Header 结构变化、仅布局更新与释放。
 - [ ] 两个首页验证首次加载、仅内容变化、增删/重排、空数据、刷新和加载更多；没有漏更新或重复提交同一批普通内容。
 - [ ] 验证同 ID、同外观但回调变化；点击、播放、长按、Header / Supplementary 操作及画报手动绑定均使用新行为。
 - [ ] Shortcut 覆盖未变化、可见内容变化、离屏更新、减少动态效果和 Socket 局部更新；检查引导、失败清理、移除后的订阅清理。
@@ -148,4 +167,4 @@ Shortcut 的实现位于 `Podcast/App/Features/Home/Featured/Sections/Shortcut/P
 - [ ] 连续刷新、内容提交失败及重试期间，SectionStore 不重入；保留实例的业务状态和可见性回调符合预期。
 - [ ] 回填实际删除了哪些代码、确认并修复了哪些误用、尚存哪些限制；记录测试环境，未验证项保持未勾选。
 
-本次文档基于两边源码静态核对，未运行 Podcast 构建、测试或 UI 验证。
+应用路径基于 2026-10-02 的源码静态核对，后续框架变更按当前实现补充；未运行 Podcast 构建、测试或 UI 验证。

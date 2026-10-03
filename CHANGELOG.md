@@ -6,6 +6,33 @@ The [Podcast migration handoff](Docs/PodcastMigration.md) maps these changes to
 current application call sites and distinguishes available simplifications from
 framework proposals and consumer behavior that still needs verification.
 
+### Data source boundaries
+
+`DefaultCollectionDataSource` is now `StagedCollectionDataSource`, describing its
+staged UIKit execution. The short `CollectionOrchestrator(collectionView:)` constructor
+still selects it; `SectionedDiff` and the replaceable algorithm contract keep their names.
+The package remains one `Parade` target, organized into responsibility-based folders.
+
+Custom factories now receive `(collectionView, views)` rather than separate cell and
+supplementary provider closures. Retain the supplied `CollectionViews` and pass it to
+either built-in source with `views:`. `CollectionCellProvider` and
+`CollectionSupplementaryProvider` are removed. Custom sources use its dequeue methods
+and `reconfigureSupplementaries(_:)` for retained compatible supplementary views.
+
+Erased presenters expose `canReuseView(with:)`; snapshots expose
+`hasSameLayoutVersion(as:)`, `hasSameSupplementaryContent(as:)` and
+`hasCompatibleSupplementaries(with:)`. These separate view reuse, capture identity
+and visual equality without exposing registration or binding internals.
+
+`CellPresenter` and `SupplementaryPresenter` now own `Id`, `id` and `Equatable`
+directly, without inheriting `DiffableElement`. Ordinary presenter implementations
+need no changes. Generic consumer helpers that relied on that inherited conformance
+must constrain the presenter protocol or explicitly adapt their algorithm inputs.
+`AnySupplementaryPresenter` no longer conforms to `DiffableElement`. Adapters alongside
+the staged implementation connect `AnyCellPresenter` and `SectionSnapshot` to the
+algorithm protocols. FIFO capture, intermediate layout queries, binding completion
+and invalid-plan reload recovery retain their existing semantics.
+
 ### Typed layout integration
 
 Collections now support Compositional, native Flow and external custom layouts through

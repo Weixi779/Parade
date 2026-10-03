@@ -22,9 +22,11 @@ flowchart LR
     Orchestrator -->|instance.dataSource| UIKit[UICollectionView.dataSource]
 ```
 
-The factory receives the collection view and Parade's cell/supplementary providers.
-It returns either `DefaultCollectionDataSource`, `DiffableCollectionDataSource`, or an
+The factory receives the collection view and its framework-created `CollectionViews`.
+It returns either `StagedCollectionDataSource`, `DiffableCollectionDataSource`, or an
 application implementation. There is no backend-type branch in the orchestrator.
+The staged convenience constructors live alongside that implementation; the main
+orchestrator only consumes the injected `CollectionDataSource` contract.
 
 ## Public roles
 
@@ -40,22 +42,30 @@ application implementation. There is no backend-type branch in the orchestrator.
 | SupplementaryPresenter | Reusable-view identity, kind/item address, configuration and behaviors | Layout creation or cell lifetime |
 | CollectionOrchestrator | Module attachment, operation queue, last completed baseline, selected layout integration, registry, delegate bridge, completion | Current data-source positions, diff execution or UIKit batches |
 | CollectionDataSource | Current section/item/layout queries, native data source, applying a captured target through UIKit | Business state, submission queue, delegate or view-creation policy |
-| DefaultCollectionDataSource | Current stage data and indexes, sectioned diff/planning, UIKit batches and reload recovery | Public completion or business events |
+| CollectionViews | Fixed dequeue/configuration/binding operations and batched compatible supplementary refresh | Content-update policy, source/target snapshots, data source or orchestrator ownership |
+| StagedCollectionDataSource | Current stage data and indexes, sectioned diff/planning, UIKit batches and reload recovery | Public completion or business events |
 | DiffableCollectionDataSource | Native snapshots and positions, logical/native identity mapping, current and previous presenter lookup during apply | Parade's structural planner or its algorithm slot |
 
 ## Source ownership
 
-- `DataSource/Default/` contains the default data source, `CollectionUpdatePlan`,
+- `Collection/` contains the orchestrator, update descriptions, collection snapshot
+  and diagnostics. These types do not depend on a concrete diff algorithm.
+- `DataSource/Staged/` contains `StagedCollectionDataSource`, `CollectionUpdatePlan`,
   `CollectionBatch`, and plan validation. A batch directly owns the section contents
   it presents; no separate identity structure or presenter-binding stage is built.
-  These UIKit update rules are not part of the replaceable algorithm contract.
-- `DataSource/` contains the shared protocol, collection snapshot and input validation,
-  shared content-update rules, and the Apple implementation. Both implementations
-  consume these types, so they do not belong exclusively to the default source.
+  Its adapters connect snapshot/presenter values to the algorithm input protocols
+  and provide the ordinary convenience constructors.
+- `DataSource/Diffable/` contains the Apple implementation. The shared protocol,
+  input diagnostics and content-update plan remain directly in `DataSource/`.
+  `CollectionContentUpdates` describes replacements, reconfigurations and layout changes;
+  it does not execute view operations.
 - `Diff/` contains the public algorithm/input/result contracts, the default algorithm,
   and its shared identity-position lookup. It does not contain UIKit batch planning.
-- `UIKit/` contains the fixed view/delegate bridge; `Registration/` owns native
-  registration and dequeue.
+- `UIKit/` contains `CollectionViews` and the fixed view/delegate bridge;
+  `Registration/` owns native registration and dequeue. `CollectionViews` retains
+  the collection view and bridge, while the bridge references its owner weakly.
+
+These are physical folders in one `Parade` target, not independently importable modules.
 
 The default implementation has three roles: the data source executes updates,
 `CollectionUpdatePlan` constructs a complete validated update, and `CollectionBatch`
@@ -93,8 +103,8 @@ boundary. They retain an internal `underlyingPresenter`, along with captured
 identity, address, and registration compatibility information. Basic operations
 use internal protocol-extension bridges: configuration and behavior binding restore
 the concrete view type, while equality checks the concrete type and casts the other presenter to `Self`.
-The erasers store no forwarding closures. `DiffableElement: Equatable` supplies the
-shared identity/equality contract. The erasers compare the same concrete presenter
+The erasers store no forwarding closures. Each presenter protocol owns its hashable
+identity and `Equatable` contract; neither inherits `DiffableElement`. The erasers compare the same concrete presenter
 type through standard `==`; concrete presenters can synthesize equality or provide
 an ordinary `static func ==` for presentation fields while excluding behavior closures.
 Identity, equality, captured data, and diff planning have no MainActor requirement.
@@ -178,6 +188,13 @@ therefore remains a base requirement with explicit cleanup responsibility.
 Transient view animation state need not become domain state. Persistent expansion,
 selection, and similar application decisions should flow from application state.
 
+The erased presenters expose `canReuseView(with:)` without exposing registration keys.
+Snapshots expose `hasCompatibleSupplementaries(with:)`,
+`hasSameSupplementaryContent(as:)` and `hasSameLayoutVersion(as:)`. The last compares
+capture identity rather than geometry: `replacingCells(_:)` preserves that version,
+while capturing a new layout value creates another version. Both supplied sources
+and external implementations can use these same model operations.
+
 Section IDs are unique. Cell IDs are globally unique occurrence IDs, allowing actual
 cross-section moves. Supplementary identity is local to section and kind; its UIKit
 address is `(sectionId, elementKind, itemIndex)`. Invalid duplicates or placements
@@ -215,8 +232,8 @@ For a cell request, the path is deliberately small:
 ```mermaid
 flowchart LR
     UIKit[UIKit requests cell] --> Source[Selected DataSource resolves presenter]
-    Source --> Provider[Supplied cell provider]
-    Provider --> Registry[Registry dequeues and configures]
+    Source --> Views[CollectionViews.cell]
+    Views --> Registry[Registry dequeues and configures]
     Registry --> Binding[Bridge binds actual cell]
 ```
 
@@ -226,11 +243,11 @@ callback. Events reach the presenter's application callback; business state chan
 produce a new submission. Cell and supplementary presenters receive no collection
 context; section modules own their explicit `SectionUpdateContext`.
 
-## Default implementation's planning boundary
+## Staged implementation's planning boundary
 
 ```mermaid
 classDiagram
-    class DefaultCollectionDataSource {
+    class StagedCollectionDataSource {
         <<public>>
         Current data and UIKit execution
     }
@@ -248,10 +265,10 @@ classDiagram
     }
     class CollectionContentUpdates {
         <<internal>>
-        Shared view update rules
+        Shared content update plan
     }
-    DefaultCollectionDataSource --> SectionedDiffAlgorithm : retains
-    DefaultCollectionDataSource ..> CollectionUpdatePlan : constructs per update
+    StagedCollectionDataSource --> SectionedDiffAlgorithm : retains
+    StagedCollectionDataSource ..> CollectionUpdatePlan : constructs per update
     CollectionUpdatePlan ..> SectionedDiffAlgorithm : uses
     CollectionUpdatePlan *-- CollectionBatch : contains
     CollectionUpdatePlan *-- CollectionContentUpdates : contains
@@ -274,7 +291,8 @@ and error precedence belong to the captured collection version.
 `SectionedDiffAlgorithm` is the public computation boundary. It receives two arrays
 of `DiffableSection`, including their items. Sections supply identity and comparison
 of their own content; items use the existing `DiffableElement` identity and equality.
-`SectionSnapshot` adapts the captured presenters without changing presenter protocols.
+An adapter in `DataSource/Staged/` conforms `AnyCellPresenter` to `DiffableElement`
+and `SectionSnapshot` to `DiffableSection`, without changing presenter protocols.
 Its own-content comparison covers supplementary identity, address and content, excluding cells.
 
 `SectionedChanges` contains section/item inserts, deletes, moves and updates in the
@@ -311,11 +329,13 @@ The default data source owns stage data, indexes, UIKit execution and reload rec
 Algorithm errors or invalid results recover by reloading the validated target before
 the first batch. The orchestrator owns the completed baseline and public completion.
 
-`CollectionContentUpdates` holds the fixed view-update rules shared by both supplied
+`CollectionContentUpdates` holds the content-update plan shared by both supplied
 implementations. The default supplies its algorithm's content-change results; the
 Apple adapter compares captured content directly and marks native snapshot reloads
-or reconfigurations. Compatible supplementary updates configure visible views and
-invalidate layout. Supplementary topology or registration changes reload the section.
+or reconfigurations. After installing the target, each source passes compatible
+supplementary updates to `CollectionViews` to configure existing views and invalidate
+layout once. The plan itself performs no view operations. Supplementary topology
+or registration changes reload the section.
 The Apple adapter has no Parade structural stages: native snapshot APIs determine
 positions, while target and previous presenter lookups resolve native requests until
 apply completes. Removed identity mappings and the previous snapshot are released

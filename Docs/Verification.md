@@ -1,5 +1,33 @@
 # Verification
 
+## Data source boundaries — 2026-10-03
+
+The complete suite passed **150 tests in 13 suites** in 6.734 seconds on Xcode 27.0 /
+iOS 27.0, using the dedicated Parade simulator. Result bundle:
+`/private/tmp/ParadeDataSource-01.xcresult`.
+
+The public-import data-source fixture now performs granular content updates using
+only the new model comparisons and `CollectionViews`. New checks cover retained
+cell/header instances with changed content, equal-content behavior replacement,
+layout-only geometry changes, same-ID cell and header type replacement, layout capture
+identity versus derived stages, and source/views release. The fixture deliberately
+reloads structural changes; it is not an independent general-purpose diff algorithm.
+Both built-in factories also verify `CollectionViews` release. Existing structural
+replay, captured-stage layout, FIFO, lifecycle and invalid-plan recovery tests passed.
+
+All **five public-module compiler checks** passed: one positive assembly and four
+expected failures. Both the standalone IM / Store app and the maintained LayoutDemo
+Xcode project built against the refactored source. All **10 IM / Store UI smoke checks**
+passed, including install-state updates across all three Store sections. Report:
+`/private/tmp/Parade-datasource-smoke.json`. The LayoutDemo project's interactive
+sequence was not repeated; layout runtime coverage comes from the full test suite.
+
+The test build emitted the existing weak-variable suggestions; tests and the layout
+example build emitted the App Intents metadata warning. No test or build failed.
+No new minimum-toolchain, iOS 16 runtime, real-device performance or Podcast integration
+verification was performed. Changes remain in one `Parade` target, with physical
+source folders separating the responsibilities.
+
 ## Research cleanup — 2026-10-03
 
 Removed the temporary layout and scroll-position research harnesses, their source
