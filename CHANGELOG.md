@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 1.0.0
+
+Parade 1.0 brings section controllers, composable submissions, typed Compositional /
+Flow / custom layouts and replaceable data sources into one public API. This is a
+breaking upgrade from 0.3; the migration details follow below. The package remains
+one module with no external dependencies, targeting iOS 16 and Swift 6.
+
+Scroll-position preservation and interactive drag reordering remain future work
+and are outside this release. The existing `onDidApply` callback is retained,
+with no new queue-idle notification.
 
 The [Podcast migration handoff](Docs/PodcastMigration.md) maps these changes to
 current application call sites and distinguishes available simplifications from

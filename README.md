@@ -7,13 +7,11 @@ presenters, a replaceable data source, and a UIKit update orchestrator. The defa
 implementation uses Parade's sectioned diff and staged updates. An adapter for
 Apple's `UICollectionViewDiffableDataSource` is also included.
 
-The development API supports section-owned Compositional, Flow and custom layouts,
-with one typed layout contract per collection. Released 0.3.0 supports
-Compositional layouts only. The development API documented below uses `SectionController`,
-`updateContext`, and `SectionStore.controllers`; released 0.3.0 uses
-`SectionPresenter`, `updates`, and `presenters`.
-See the [unreleased naming migration](CHANGELOG.md#section-controller-naming) and
-the [0.3 content/snapshot migration](CHANGELOG.md#api-naming-changes) when upgrading.
+Parade 1.0 supports section-owned Compositional, Flow and custom layouts,
+with one typed layout contract per collection. Upgrading from 0.3 requires changes
+to section naming, collection submissions, presenter bindings and custom data-source
+factories. See the [1.0 migration notes](CHANGELOG.md#100) and
+[layout integration guide](Docs/LayoutIntegration.md).
 For the first application integration, the [Podcast migration handoff](Docs/PodcastMigration.md)
 records required changes, concrete simplifications, and pending consumer checks.
 
@@ -39,14 +37,14 @@ See [Announcing Swift 6](https://www.swift.org/blog/announcing-swift-6/).
 The package exposes one library and module, `Parade`, with no external dependencies.
 In Xcode, choose **File > Add Package Dependencies**, enter
 `https://github.com/Weixi779/Parade.git`, and select the `Parade` product.
-Use **Up to Next Minor Version** from `0.3.0` to stay on the 0.3 release line.
+Use **Up to Next Major Version** from `1.0.0`.
 
 For a Swift package, add the dependency and product to your `Package.swift`:
 
 ```swift
 .package(
     url: "https://github.com/Weixi779/Parade.git",
-    .upToNextMinor(from: "0.3.0")
+    from: "1.0.0"
 )
 ```
 
@@ -54,8 +52,9 @@ For a Swift package, add the dependency and product to your `Package.swift`:
 .product(name: "Parade", package: "Parade")
 ```
 
-During 0.x development, minor versions may change public API. The dependency
-requirement above accepts 0.3 patch releases without automatically upgrading to 0.4.
+The dependency requirement accepts compatible 1.x releases without automatically
+upgrading to 2.0. Applications remaining on 0.3 should use the
+[0.3.0 documentation](https://github.com/Weixi779/Parade/blob/0.3.0/README.md).
 
 ## Quick start
 
@@ -284,7 +283,9 @@ Updates execute in FIFO order. Callback and async completion include every
 structural stage, content update, and behavior refresh. A cancelled awaiting task
 does not roll back an accepted update. Read-only queries describe the data source
 version currently presented by UIKit; `onDidApply` and `appliedRevision` identify
-completed submissions.
+completed submissions. For a successful queued submission, `onDidApply` and callback
+completion run before its pending count is decremented, so `isApplying` can still
+be true; neither is a queue-idle signal.
 
 Invalid IDs or supplementary placements reject that submission and preserve the
 current display; later valid submissions continue normally. Parade does not choose

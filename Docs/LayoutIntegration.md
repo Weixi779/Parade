@@ -1,6 +1,6 @@
 # 布局接入与迁移
 
-此文描述未发布的开发 API。布局由 Section 决定；集合选择一种布局类型，Parade 将它与内容一同捕获、排队和更新。内置 Compositional、Flow 接入，自定义 `UICollectionViewLayout` 可在库外接入。
+此文描述 1.0 的布局 API。布局由 Section 决定；集合选择一种布局类型，Parade 将它与内容一同捕获、排队和更新。内置 Compositional、Flow 接入，自定义 `UICollectionViewLayout` 可在库外接入。
 
 ## 核心代码入口
 

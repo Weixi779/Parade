@@ -6,15 +6,15 @@ Podcast 提供真实使用场景，Parade 仍负责定义通用的框架契约�
 
 ## 适用版本与接入位置
 
-Parade 契约更新至 **2026-10-03** 的 DataSource 解耦重构，包含此前 public API 整理及正式布局实现，属于未发布开发 API。Podcast 最后一次源码核对为 **2026-10-02**，对照本地 `3eaa6a714` 工作区；本轮没有重新核对或修改 Podcast。执行迁移时须重新确认两边版本，不把本文当作已发布 1.0 的能力清单。
+Parade 契约对照 **2026-10-03** 的 **1.0.0 API**，包含 public API 整理、typed layout 和 DataSource 解耦。Podcast 最后一次源码核对为 **2026-10-02**，对照本地 `3eaa6a714` 工作区；本轮没有重新核对或修改 Podcast。执行迁移时须重新确认两边 revision，并记录实际使用的 Parade tag；本文不代表 Podcast 已完成 1.0 接入。
 
 Podcast 的 Home 代码当前导入 `XYZFoundationUI`，Collection 实现在该仓库的 `Submodules/XYZFoundationUI/Sources/XYZFoundationUI/Collection/` 中。其 Package 当前没有外部依赖。因此，单独升级 Parade 包版本不会自动迁移这份实现：应先确认继续同步源码，还是调整模块依赖，再迁移调用方。
 
-下文路径均相对于 **Podcast-iOS 仓库根目录**。Parade 的完整 API 变更见 [CHANGELOG](../CHANGELOG.md#unreleased)，框架验证范围见 [Verification](Verification.md)。本文只记录迁移方案，尚未修改或验证 Podcast 应用。
+下文路径均相对于 **Podcast-iOS 仓库根目录**。Parade 的完整 API 变更见 [CHANGELOG](../CHANGELOG.md#100)，框架验证范围见 [Verification](Verification.md)。本文只记录迁移方案，尚未修改或验证 Podcast 应用。
 
 ## 必须迁移的 API
 
-| 原用法 | 开发版用法 | 迁移要点 |
+| 原用法 | 1.0 用法 | 迁移要点 |
 | --- | --- | --- |
 | `SectionPresenter` | `SectionController` | 修改协议遵循；业务具体类和文件的 `SectionPresenter` 后缀建议同步改为 `SectionController`。Cell 和 Supplementary 仍叫 Presenter。 |
 | Section 的 `updates` | `updateContext` | 同步检查 `isAttached` 等访问。 |
@@ -120,10 +120,11 @@ Shortcut 的实现位于 `Podcast/App/Features/Home/Featured/Sections/Shortcut/P
 
 | 议题 | 当前状态 | 届时要回答的 Podcast 迁移问题 |
 | --- | --- | --- |
-| Flow Layout / 自定义 `UICollectionViewLayout` | 正式开发 API 已实现，见下方迁移说明和 [布局契约](LayoutIntegration.md)；尚未迁移 Podcast | 核对实际自建 Collection 的协议和回调，确定适配代码可删范围；每个 Section 只提供自己所属布局类型，不要求写两套。 |
+| Flow Layout / 自定义 `UICollectionViewLayout` | 1.0 API 已实现，见下方迁移说明和 [布局契约](LayoutIntegration.md)；尚未迁移 Podcast | 核对实际自建 Collection 的协议和回调，确定适配代码可删范围；每个 Section 只提供自己所属布局类型，不要求写两套。 |
 | Diff 算法和 DataSource 的命名、可替换边界 | 已完成本轮职责解耦；`StagedCollectionDataSource`、`CollectionViews` 和公开模型判断已实现，仍为同一个 target | 按下方说明迁移工厂和泛型约束；实际删除范围需在 Podcast 接入时确认。 |
-| 滚动位置保持 | 尚无可交付的自动保持 API | 在实际支持的布局和更新场景中，哪些位置记录/恢复代码可删除；哪些仍由业务布局处理。 |
-| 队列空闲通知 | 讨论项，尚未增加 API | 是否确实能简化 pending render，先给出已实现契约和使用证据。 |
+| 滚动位置保持 | 未来 TODO，明确不纳入 1.0；从有实际需求的具体布局验证 | 1.0 迁移继续保留业务布局中的位置记录与补偿；只有后续实现和验证成立后，才讨论删除范围。 |
+| 拖拽与交互排序 | 未来 TODO，明确不纳入 1.0 | 不把布局接入或程序化移动当成交互排序支持；有真实编辑场景后再讨论同步规则。 |
+| 队列空闲通知 | 1.0 不新增；保留既有 `onDidApply` | `onDidApply` 仍不是 idle 信号；迁移不能据此删除 pending render 的等待逻辑。 |
 
 后续每落地一项变更，在本文补齐“框架契约 → Podcast 调用位置 → 必改项 / 可删除代码 → 必须保留的业务行为 → 验证结果”。未经实现和验证的讨论保持待定，不写成升级收益。
 
@@ -142,7 +143,7 @@ Shortcut 的实现位于 `Podcast/App/Features/Home/Featured/Sections/Shortcut/P
 
 Parade 的公开消费者测试已验证局部内容更新、兼容视图保留、Cell / Header 类型替换、仅布局变化、等内容重绑，以及 Source / `CollectionViews` 释放。它没有迁移或构建 Podcast；接入时须对真实自研实现逐项核对，不能把测试中的简化 DataSource 当作完整结构更新算法复制。
 
-## 布局开发 API 的必改项与可简化项
+## 布局 API 的必改项与可简化项
 
 - 现有 Compositional Section 将 `DefaultSectionContent` 改为 `LayoutContent<CompositionalSectionLayout>`；若自己实现 Content，则把 `makeLayout(in:)` 改为返回 `CompositionalSectionLayout` 的 `layout` 属性。原生 Section 构造逻辑可保留。
 - Home 中显式声明的 orchestrator、store、definition、snapshot、data source 类型加上 `<CompositionalSectionLayout>`。共同子协议用 `where Layout == CompositionalSectionLayout` 约束；如果保存 `[any HomeSection]`，通过应用侧 `collectionSection` 出口逐元素转换，写法见 [布局迁移](LayoutIntegration.md#升级现有代码)。本轮发现直接转换带关联类型的子协议数组可编译却运行崩溃，不能只以编译通过为迁移验收。具体 Section 直接构造的数组无需改动。

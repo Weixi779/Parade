@@ -1,6 +1,6 @@
 # Parade implementation contract
 
-This documents the development API as of 2026-10-03, including replaceable data sources,
+This documents the 1.0 API as of 2026-10-03, including replaceable data sources,
 typed layout integration, section-controller naming and composable collection updates. See
 [layout integration](LayoutIntegration.md) for concrete adapters and migration.
 
@@ -147,7 +147,7 @@ typed layout integration, section-controller naming and composable collection up
   No generic layout family, second layout implementation or global event bus is included.
 - UIKit owns cell reuse and native cell prefetching. Parade leaves `isPrefetchingEnabled`
   unchanged and does not install a `prefetchDataSource`; applications may supply one.
-  Section working-range callbacks are outside the 0.3 API.
+  Section working-range callbacks are outside the 1.0 API.
 
 ## Verification
 
