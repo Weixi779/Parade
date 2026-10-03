@@ -130,7 +130,7 @@ struct CollectionUpdatePlanTests {
 
     private func composition(
         _ sections: [SectionSnapshot<CompositionalSectionLayout>]
-    ) throws(CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure) -> CollectionSnapshot<CompositionalSectionLayout> {
+    ) throws(CollectionValidationFailure) -> CollectionSnapshot<CompositionalSectionLayout> {
         try CollectionSnapshot<CompositionalSectionLayout>(sections)
     }
 

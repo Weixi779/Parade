@@ -98,13 +98,13 @@ struct CollectionBatchTests {
             [Section(id: 0, items: [1]), Section(id: 1, items: [1])]
         ]
         for sections in invalid {
-            #expect(throws: CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure.self) {
+            #expect(throws: CollectionValidationFailure.self) {
                 try plan(from: sections, to: [])
             }
-            #expect(throws: CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure.self) {
+            #expect(throws: CollectionValidationFailure.self) {
                 try plan(from: [], to: sections)
             }
-            #expect(throws: CollectionSnapshot<CompositionalSectionLayout>.ValidationFailure.self) {
+            #expect(throws: CollectionValidationFailure.self) {
                 try plan(from: sections, to: sections)
             }
         }

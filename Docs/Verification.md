@@ -1,5 +1,23 @@
 # Verification
 
+## 1.0.0 minimum-toolchain correction — 2026-10-03
+
+The first publication CI run on `8ea19101` failed in Xcode 16.0 / Swift 6.0 before
+tests started. The compiler crashed in `AllocStackHoisting` while compiling
+`validateMembership(_:)`, whose typed error was nested in `CollectionSnapshot<Layout>`.
+The [failed run](https://github.com/Weixi779/Parade/actions/runs/37105694303) preserves
+the compiler trace.
+
+The correction makes that layout-independent error a non-generic internal
+`CollectionValidationFailure`. Public API, validation order, error payloads and
+diagnostic locations are unchanged. The complete local suite passed again:
+**150 tests in 13 suites**, 6.760 seconds, with result bundle
+`/private/tmp/ParadeRelease-1.0.0-compat.xcresult`.
+
+The initial candidate results below remain historical. Publication requires a
+successful CI run for the corrected commit; the GitHub Release links that final run.
+The remote tag was not published from the failed candidate.
+
 ## 1.0.0 release candidate — 2026-10-03
 
 Rechecked the candidate with Xcode 27.0 (27A266a), Swift 6.4 in Swift 6 language

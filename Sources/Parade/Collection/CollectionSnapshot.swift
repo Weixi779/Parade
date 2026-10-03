@@ -19,12 +19,12 @@ public struct CollectionSnapshot<Layout> {
     }
 
     /// Validate each section completely before the next, preserving error order.
-    init(_ sections: [SectionSnapshot<Layout>]) throws(ValidationFailure) {
+    init(_ sections: [SectionSnapshot<Layout>]) throws(CollectionValidationFailure) {
         var sectionLocations = [AnyHashable: Int](minimumCapacity: sections.count)
         var cellLocations: [AnyHashable: (section: Int, item: Int)] = [:]
         for (sectionIndex, section) in sections.enumerated() {
             if let first = sectionLocations.updateValue(sectionIndex, forKey: section.id) {
-                throw ValidationFailure(
+                throw CollectionValidationFailure(
                     .duplicateSectionId(String(describing: section.id)),
                     locations: [.init(section: first), .init(section: sectionIndex)]
                 )
@@ -32,7 +32,7 @@ public struct CollectionSnapshot<Layout> {
             for (item, presenter) in section.cells.enumerated() {
                 let location = (section: sectionIndex, item: item)
                 if let first = cellLocations.updateValue(location, forKey: presenter.id) {
-                    throw ValidationFailure(
+                    throw CollectionValidationFailure(
                         .duplicateCellId(String(describing: presenter.id)),
                         locations: [
                             .init(section: first.section, item: first.item),
@@ -47,17 +47,19 @@ public struct CollectionSnapshot<Layout> {
         sectionsById = sectionLocations.mapValues { sections[$0] }
         cellsById = cellLocations.mapValues { sections[$0.section].cells[$0.item] }
     }
+}
 
-    struct ValidationFailure: Error {
-        let error: CollectionUpdateError
-        let diagnostic: CollectionDiagnostic
+// Validation errors do not depend on Layout. Keeping this type outside the generic
+// snapshot also avoids a Swift 6.0 compiler crash when lowering typed throws.
+struct CollectionValidationFailure: Error {
+    let error: CollectionUpdateError
+    let diagnostic: CollectionDiagnostic
 
-        init(_ error: CollectionUpdateError, locations: [CollectionDiagnostic.Location]) {
-            self.error = error
-            diagnostic = CollectionDiagnostic(
-                reason: .invalidUpdate(error), recovery: .rejectedUpdate, locations: locations
-            )
-        }
+    init(_ error: CollectionUpdateError, locations: [CollectionDiagnostic.Location]) {
+        self.error = error
+        diagnostic = CollectionDiagnostic(
+            reason: .invalidUpdate(error), recovery: .rejectedUpdate, locations: locations
+        )
     }
 }
 
@@ -75,7 +77,7 @@ private extension CollectionSnapshot {
     static func validateSupplementaries(
         in section: SectionSnapshot<Layout>,
         at sectionIndex: Int
-    ) throws(ValidationFailure) {
+    ) throws(CollectionValidationFailure) {
         let sectionDescription = String(describing: section.id)
         var placements: [SupplementaryAddress: CollectionDiagnostic.Location] = [:]
         var identities: [SupplementaryIdentity: CollectionDiagnostic.Location] = [:]
@@ -83,7 +85,7 @@ private extension CollectionSnapshot {
             let address = SupplementaryAddress(kind: presenter.elementKind, item: presenter.itemIndex)
             let location = CollectionDiagnostic.Location(section: sectionIndex, item: address.item)
             guard !address.kind.isEmpty, address.item >= 0 else {
-                throw ValidationFailure(
+                throw CollectionValidationFailure(
                     .invalidSupplementaryPlacement(
                         section: sectionDescription, kind: address.kind, item: address.item
                     ),
@@ -91,7 +93,7 @@ private extension CollectionSnapshot {
                 )
             }
             if let first = placements.updateValue(location, forKey: address) {
-                throw ValidationFailure(
+                throw CollectionValidationFailure(
                     .duplicateSupplementaryPlacement(
                         section: sectionDescription, kind: address.kind, item: address.item
                     ),
@@ -100,7 +102,7 @@ private extension CollectionSnapshot {
             }
             let identity = SupplementaryIdentity(kind: address.kind, id: presenter.id)
             if let first = identities.updateValue(location, forKey: identity) {
-                throw ValidationFailure(
+                throw CollectionValidationFailure(
                     .duplicateSupplementaryId(
                         section: sectionDescription, kind: identity.kind,
                         id: String(describing: identity.id)

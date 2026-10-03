@@ -176,14 +176,14 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
     }
 
     private struct Submission {
-        let makeTarget: @MainActor (CollectionSnapshot<Layout>) throws(CollectionSnapshot<Layout>.ValidationFailure) -> CollectionSnapshot<Layout>
+        let makeTarget: @MainActor (CollectionSnapshot<Layout>) throws(CollectionValidationFailure) -> CollectionSnapshot<Layout>
         let animated: Bool
         let mode: CollectionUpdateMode
         let didApply: @MainActor () -> Void
         let completion: @MainActor (Result<Void, CollectionUpdateError>) -> Void
 
         init(
-            makeTarget: @escaping @MainActor (CollectionSnapshot<Layout>) throws(CollectionSnapshot<Layout>.ValidationFailure) -> CollectionSnapshot<Layout>,
+            makeTarget: @escaping @MainActor (CollectionSnapshot<Layout>) throws(CollectionValidationFailure) -> CollectionSnapshot<Layout>,
             animated: Bool,
             mode: CollectionUpdateMode,
             didApply: @escaping @MainActor () -> Void = {},
@@ -211,14 +211,14 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
             if let incoming {
                 try validateMembership(incoming)
                 let candidates = Dictionary(uniqueKeysWithValues: incoming.map { ($0.identity, $0) })
-                selected = try sections.map { section throws(CollectionSnapshot<Layout>.ValidationFailure) in
+                selected = try sections.map { section throws(CollectionValidationFailure) in
                     guard let member = candidates[ObjectIdentifier(section)] else {
                         throw failure(.sectionNotInComposition(String(describing: section.id)))
                     }
                     return member
                 }
             } else {
-                selected = try sections.map { section throws(CollectionSnapshot<Layout>.ValidationFailure) in
+                selected = try sections.map { section throws(CollectionValidationFailure) in
                     guard let member = members[ObjectIdentifier(section)] else {
                         throw failure(.sectionNotAttached)
                     }
@@ -236,7 +236,7 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
         let captured = candidates.map { $0.captureSnapshot() }
         let selectedIdentities = Set(selected.map(\.identity))
         let selectedIndices = candidates.indices.filter { selectedIdentities.contains(candidates[$0].identity) }
-        do throws(CollectionSnapshot<Layout>.ValidationFailure) {
+        do throws(CollectionValidationFailure) {
             try validateLocally(captured, at: selectedIndices)
             for index in selectedIndices {
                 let member = candidates[index]
@@ -250,7 +250,7 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
         }
 
         var accepted: [ObjectIdentifier: Member]?
-        submit(Submission(makeTarget: { baseline throws(CollectionSnapshot<Layout>.ValidationFailure) in
+        submit(Submission(makeTarget: { baseline throws(CollectionValidationFailure) in
             guard let incoming else {
                 for member in selected {
                     guard self.members[member.identity] === member else {
@@ -290,7 +290,7 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
         }, completion: completion))
     }
 
-    private func validateMembership(_ incoming: [Member]) throws(CollectionSnapshot<Layout>.ValidationFailure) {
+    private func validateMembership(_ incoming: [Member]) throws(CollectionValidationFailure) {
         var ids: [AnyHashable: Int] = [:]
         var contexts = Set<ObjectIdentifier>()
         for (index, member) in incoming.enumerated() {
@@ -442,19 +442,19 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
         emptyView = nil
         previousBackgroundView = nil
     }
-    private func validateLocally(_ contents: [SectionSnapshot<Layout>], at indices: [Int]) throws(CollectionSnapshot<Layout>.ValidationFailure) {
+    private func validateLocally(_ contents: [SectionSnapshot<Layout>], at indices: [Int]) throws(CollectionValidationFailure) {
         var ids: [AnyHashable: Int] = [:]
         for index in indices {
             let content = contents[index]
             if let first = ids.updateValue(index, forKey: content.id) {
-                throw CollectionSnapshot<Layout>.ValidationFailure(
+                throw CollectionValidationFailure(
                     .duplicateSectionId(String(describing: content.id)),
                     locations: [.init(section: first), .init(section: index)]
                 )
             }
             do { _ = try CollectionSnapshot<Layout>([content]) }
             catch {
-                throw CollectionSnapshot<Layout>.ValidationFailure(
+                throw CollectionValidationFailure(
                     error.error,
                     locations: error.diagnostic.locations.map { .init(section: index, item: $0.item) }
                 )
@@ -463,14 +463,14 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
     }
 
     private func reject(
-        _ failure: CollectionSnapshot<Layout>.ValidationFailure,
+        _ failure: CollectionValidationFailure,
         completion: @MainActor (Result<Void, CollectionUpdateError>) -> Void
     ) {
         report(failure.diagnostic)
         completion(.failure(failure.error))
     }
 
-    private func failure(_ error: CollectionUpdateError) -> CollectionSnapshot<Layout>.ValidationFailure {
+    private func failure(_ error: CollectionUpdateError) -> CollectionValidationFailure {
         .init(error, locations: [])
     }
 
