@@ -1,5 +1,41 @@
 # Verification
 
+## 1.0.0 release candidate — 2026-10-03
+
+Rechecked the candidate with Xcode 27.0 (27A266a), Swift 6.4 in Swift 6 language
+mode, and the dedicated iPhone 18 Pro / iOS 27.0 simulator. Production, test and
+example sources match `f6f188bc`; release preparation changes documentation only.
+
+| Check | Result |
+| --- | --- |
+| Complete package and UIKit integration suite | **150 tests in 13 suites passed**, 6.712 seconds |
+| Public layout compiler checks | **5 passed**: one valid consumer and four expected compile failures |
+| Production Release build, `arm64-apple-ios16.0` | Passed with `-warnings-as-errors` |
+| Independent SwiftPM consumer | README quick start and injected diffable source passed in Release, targeting iOS 16, with `-warnings-as-errors` |
+| IM / Store public-API example | Built; **all 10 UI smoke checks passed** |
+| LayoutDemo | Built; **all six steps completed**, with 22 display callbacks |
+
+The layout report confirmed Compositional item heights of 92 → 140 pt, Flow item
+heights scaled by 1.25 with the content section moving from index 1 to 0, and the
+external waterfall changing from two to three columns. Reports were checked for
+fresh output from this run, not reused from earlier launches.
+
+Artifacts: `/private/tmp/ParadeRelease-1.0.0.xcresult`,
+`/private/tmp/ParadeRelease-1.0.0-smoke.json`, and
+`/private/tmp/ParadeRelease-1.0.0-layout.json`. Build and compiler-check logs share
+the `/private/tmp/ParadeRelease-1.0.0-` prefix. The independent consumer uses the
+local package product; it does not validate a published 1.0.0 tag or remote resolution.
+
+Production and independent-consumer builds emitted no warnings. The test build
+retained two existing weak-variable mutability suggestions; test and LayoutDemo
+builds emitted the App Intents metadata warning. All checks above completed successfully.
+
+The remote CI checked during this review last passed for the 0.3.0 commit
+`db4a8279`; it has not verified this candidate. Xcode 16.0 and 16.4 are not installed
+locally, so minimum-toolchain and CI-runtime results remain pending. The iOS 16
+deployment-target build is not iOS 16 runtime evidence. Real-device performance,
+animation quality and Podcast application integration remain unverified.
+
 ## Data source boundaries — 2026-10-03
 
 The complete suite passed **150 tests in 13 suites** in 6.734 seconds on Xcode 27.0 /
