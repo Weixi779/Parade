@@ -74,22 +74,7 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
     private var diagnostics: [CollectionDiagnostic] = []
     private var diagnosticDeliveryScheduled = false
 
-    public convenience init(
-        collectionView: UICollectionView,
-        layout: CollectionLayout<Layout>,
-        diffAlgorithm: any SectionedDiffAlgorithm = SectionedDiff()
-    ) {
-        self.init(collectionView: collectionView, layout: layout) { view, cell, supplementary in
-            DefaultCollectionDataSource<Layout>(
-                collectionView: view,
-                cellProvider: cell,
-                supplementaryProvider: supplementary,
-                diffAlgorithm: diffAlgorithm
-            )
-        }
-    }
-
-    /// Creates one data-source implementation with Parade's fixed view providers.
+    /// Creates one data-source implementation with Parade's fixed view operations.
     /// The factory runs once and this orchestrator retains the returned instance;
     /// do not share it with another collection view or start updates in the factory.
     public init(
@@ -97,8 +82,7 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
         layout: CollectionLayout<Layout>,
         makeDataSource: @MainActor (
             UICollectionView,
-            @escaping CollectionCellProvider,
-            @escaping CollectionSupplementaryProvider
+            CollectionViews
         ) -> any CollectionDataSource<Layout>
     ) {
         self.collectionView = collectionView
@@ -113,10 +97,7 @@ public final class CollectionOrchestrator<Layout>: CollectionViewBridgeOwner {
         self.bridge = bridge
         let source = makeDataSource(
             collectionView,
-            { view, path, presenter in bridge.cell(in: view, at: path, presenter: presenter) },
-            { view, kind, path, presenter in
-                bridge.supplementary(in: view, ofKind: kind, at: path, presenter: presenter)
-            }
+            CollectionViews(collectionView: collectionView, bridge: bridge)
         )
         self.source = source
         bridge.owner = self

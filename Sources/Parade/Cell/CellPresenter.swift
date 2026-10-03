@@ -13,8 +13,11 @@ import UIKit
 /// Parade retains them for content comparison and callbacks. Content equality
 /// describes visual content, independently of identity and behavior closures.
 /// Opt into interaction and visibility callbacks through the capability protocols.
-public protocol CellPresenter: DiffableElement {
+public protocol CellPresenter: Equatable {
+    associatedtype Id: Hashable
     associatedtype Cell: UICollectionViewCell
+
+    var id: Id { get }
 
     @MainActor func configure(_ cell: Cell)
 
@@ -29,6 +32,13 @@ public protocol CellPresenter: DiffableElement {
 
 public extension CellPresenter {
     func bind(to cell: Cell) {}
+}
+
+extension CellPresenter {
+    func equals(_ other: any CellPresenter) -> Bool {
+        guard type(of: self) == type(of: other), let other = other as? Self else { return false }
+        return self == other
+    }
 }
 
 @MainActor

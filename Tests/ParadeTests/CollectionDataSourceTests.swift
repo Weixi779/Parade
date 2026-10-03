@@ -14,9 +14,9 @@ struct CollectionDataSourceTests {
         defer { fixture.window.isHidden = true }
         let probe = SourceProbe()
         var factories = 0
-        let owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: fixture.view) { view, cell, supplementary in
+        let owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: fixture.view) { view, views in
             factories += 1
-            let source = ExternalDataSource(view: view, cell: cell, supplementary: supplementary, probe: probe)
+            let source = ExternalDataSource(view: view, views: views, probe: probe)
             probe.source = source
             return source
         }
@@ -59,18 +59,22 @@ struct CollectionDataSourceTests {
         let fixture = PublicFixture()
         defer { fixture.window.isHidden = true }
         weak var retained: (any CollectionDataSource<CompositionalSectionLayout>)?
+        weak var retainedViews: CollectionViews?
         var factories = 0
         var owner: CollectionOrchestrator<CompositionalSectionLayout>? = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: fixture.view) {
-            view, cell, supplementary in
+            view, views in
             factories += 1
+            retainedViews = views
             let source: any CollectionDataSource<CompositionalSectionLayout>
             if native {
                 source = DiffableCollectionDataSource<CompositionalSectionLayout>(
-                    collectionView: view, cellProvider: cell, supplementaryProvider: supplementary
+                    collectionView: view,
+                    views: views
                 )
             } else {
-                source = DefaultCollectionDataSource<CompositionalSectionLayout>(
-                    collectionView: view, cellProvider: cell, supplementaryProvider: supplementary
+                source = StagedCollectionDataSource<CompositionalSectionLayout>(
+                    collectionView: view,
+                    views: views
                 )
             }
             retained = source
@@ -93,8 +97,139 @@ struct CollectionDataSourceTests {
         #expect(owner?.cellPresenter(at: .init(item: 50, section: 0)) == nil)
         #expect(factories == 1)
         #expect(retained != nil)
+        #expect(retainedViews != nil)
         owner = nil
         #expect(retained == nil)
+        #expect(retainedViews == nil)
+    }
+
+    @Test("An external source refreshes content and bindings while retaining compatible views")
+    func externalContentUpdates() async throws {
+        let fixture = PublicFixture()
+        defer { fixture.window.isHidden = true }
+        let probe = SourceProbe()
+        weak var retainedViews: CollectionViews?
+        var owner: CollectionOrchestrator<CompositionalSectionLayout>? = CollectionOrchestrator(
+            collectionView: fixture.view
+        ) { view, views in
+            retainedViews = views
+            let source = ExternalDataSource(view: view, views: views, probe: probe)
+            probe.source = source
+            return source
+        }
+        let section = EditableSection()
+        var actions: [String] = []
+        section.cells = [AnyCellPresenter(EditableCellPresenter(text: "old") { actions.append("old cell") })]
+        section.headers = [AnySupplementaryPresenter(EditableHeaderPresenter(text: "old") {
+            actions.append("old header")
+        })]
+        try await owner?.compose([section]).apply(animated: false)
+        let path = IndexPath(item: 0, section: 0)
+        let cell = try #require(fixture.view.cellForItem(at: path) as? EditableCell)
+        let header = try #require(fixture.view.supplementaryView(
+            forElementKind: UICollectionView.elementKindSectionHeader,
+            at: path
+        ) as? EditableHeader)
+
+        section.cells = [AnyCellPresenter(EditableCellPresenter(text: "new") { actions.append("new cell") })]
+        section.headers = [AnySupplementaryPresenter(EditableHeaderPresenter(text: "new") {
+            actions.append("new header")
+        })]
+        section.height = 72
+        try await section.update(animated: false)
+        #expect(fixture.view.cellForItem(at: path) === cell)
+        #expect(fixture.view.supplementaryView(
+            forElementKind: UICollectionView.elementKindSectionHeader,
+            at: path
+        ) === header)
+        #expect(cell.accessibilityLabel == "new")
+        #expect(header.accessibilityLabel == "new")
+        #expect(abs(cell.frame.height - 72) < 0.1)
+        cell.action?()
+        header.action?()
+        #expect(actions == ["new cell", "new header"])
+
+        let cellConfigurations = cell.configurations
+        let headerConfigurations = header.configurations
+        section.cells = [AnyCellPresenter(EditableCellPresenter(text: "new") { actions.append("latest cell") })]
+        section.headers = [AnySupplementaryPresenter(EditableHeaderPresenter(text: "new") {
+            actions.append("latest header")
+        })]
+        try await section.update(animated: false)
+        cell.action?()
+        header.action?()
+        #expect(actions.suffix(2) == ["latest cell", "latest header"])
+        #expect(cell.configurations == cellConfigurations)
+        #expect(header.configurations == headerConfigurations)
+
+        section.height = 110
+        try await section.update(animated: false)
+        #expect(abs(cell.frame.height - 110) < 0.1)
+        #expect(cell.configurations == cellConfigurations)
+        #expect(header.configurations == headerConfigurations)
+        #expect(probe.reloads == 1)
+        #expect(owner?.appliedRevision == 4)
+        #expect(retainedViews != nil)
+        owner = nil
+        #expect(probe.source == nil)
+        #expect(retainedViews == nil)
+    }
+
+    @Test("An external source replaces incompatible cells and supplementary views")
+    func externalViewReplacement() async throws {
+        let fixture = PublicFixture()
+        defer { fixture.window.isHidden = true }
+        let probe = SourceProbe()
+        let owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: fixture.view) { view, views in
+            ExternalDataSource(view: view, views: views, probe: probe)
+        }
+        let section = EditableSection()
+        section.cells = [AnyCellPresenter(EditableCellPresenter(text: "old", action: {}))]
+        section.headers = [AnySupplementaryPresenter(EditableHeaderPresenter(text: "old", action: {}))]
+        try await owner.compose([section]).apply(animated: false)
+        let path = IndexPath(item: 0, section: 0)
+        #expect(fixture.view.cellForItem(at: path) is EditableCell)
+        section.cells = [AnyCellPresenter(ReplacementCellPresenter())]
+        try await section.update(animated: false)
+        #expect(fixture.view.cellForItem(at: path) is ReplacementCell)
+        section.headers = [AnySupplementaryPresenter(ReplacementHeaderPresenter())]
+        try await section.update(animated: false)
+        #expect(fixture.view.supplementaryView(
+            forElementKind: UICollectionView.elementKindSectionHeader,
+            at: path
+        ) is ReplacementHeader)
+        #expect(probe.reloads == 1)
+    }
+
+    @Test("Public snapshot comparisons separate capture identity, content and view compatibility")
+    func publicComparisons() {
+        let first = AnyCellPresenter(EditableCellPresenter(text: "same", action: {}))
+        let changed = AnyCellPresenter(EditableCellPresenter(text: "changed", action: {}))
+        #expect(first != changed)
+        #expect(first.canReuseView(with: changed))
+        #expect(!first.canReuseView(with: AnyCellPresenter(ReplacementCellPresenter())))
+        let header = AnySupplementaryPresenter(EditableHeaderPresenter(text: "same", action: {}))
+        let changedHeader = AnySupplementaryPresenter(EditableHeaderPresenter(text: "changed", action: {}))
+        #expect(header.canReuseView(with: changedHeader))
+        #expect(!header.canReuseView(with: AnySupplementaryPresenter(ReplacementHeaderPresenter())))
+        let original = SectionSnapshot(
+            id: "section",
+            cells: [first],
+            supplementaryViews: [header],
+            layout: { 42 }
+        )
+        let stage = original.replacingCells([changed])
+        #expect(original.hasSameLayoutVersion(as: stage))
+        #expect(original.hasSameSupplementaryContent(as: stage))
+        let recaptured = SectionSnapshot(
+            id: original.id,
+            cells: original.cells,
+            supplementaryViews: [changedHeader],
+            layout: original.layoutValue
+        )
+        #expect(!original.hasSameLayoutVersion(as: recaptured))
+        #expect(original.hasCompatibleSupplementaries(with: recaptured))
+        #expect(!original.hasSameSupplementaryContent(as: recaptured))
     }
 }
 
@@ -104,26 +239,24 @@ private final class SourceProbe {
     var inputs: [(source: [AnyHashable], target: [AnyHashable])] = []
     var didStart: (() -> Void)?
     var release: CheckedContinuation<Void, Never>?
+    var reloads = 0
 }
 
 /// This implementation knows nothing about Parade's planner, registry or bridge.
 @MainActor
 private final class ExternalDataSource: NSObject, CollectionDataSource, UICollectionViewDataSource {
     let view: UICollectionView
-    let cell: CollectionCellProvider
-    let supplementary: CollectionSupplementaryProvider
+    let views: CollectionViews
     let probe: SourceProbe
     var content = CollectionSnapshot<CompositionalSectionLayout>.empty
 
     init(
         view: UICollectionView,
-        cell: @escaping CollectionCellProvider,
-        supplementary: @escaping CollectionSupplementaryProvider,
+        views: CollectionViews,
         probe: SourceProbe
     ) {
         self.view = view
-        self.cell = cell
-        self.supplementary = supplementary
+        self.views = views
         self.probe = probe
     }
 
@@ -170,9 +303,60 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
                 started()
             }
         }
-        content = target
-        view.reloadData()
+        // This consumer deliberately reloads structural changes and performs granular
+        // content updates using only the public model comparisons and view operations.
+        guard mode == .diff,
+              source.sections.map(\.id) == target.sections.map(\.id),
+              zip(source.sections, target.sections).allSatisfy({ $0.cells.map(\.id) == $1.cells.map(\.id) }) else {
+            content = target
+            probe.reloads += 1
+            view.collectionViewLayout.invalidateLayout()
+            view.reloadData()
+            view.layoutIfNeeded()
+            return []
+        }
+        var sections = IndexSet()
+        var replacements: [IndexPath] = []
+        var reconfigurations: [IndexPath] = []
+        var supplementaries: [(indexPath: IndexPath, presenter: AnySupplementaryPresenter)] = []
+        var layoutChanged = false
+        for (index, next) in target.sections.enumerated() {
+            let previous = source.sections[index]
+            layoutChanged = layoutChanged || !previous.hasSameLayoutVersion(as: next)
+            guard previous.hasCompatibleSupplementaries(with: next) else {
+                sections.insert(index)
+                continue
+            }
+            for (item, presenter) in next.cells.enumerated() {
+                let old = previous.cells[item]
+                let path = IndexPath(item: item, section: index)
+                if !old.canReuseView(with: presenter) { replacements.append(path) }
+                else if old != presenter { reconfigurations.append(path) }
+            }
+            if !previous.hasSameSupplementaryContent(as: next) {
+                for presenter in next.supplementaryViews where previous.supplementary(
+                    ofKind: presenter.elementKind,
+                    at: presenter.itemIndex
+                ) != presenter {
+                    supplementaries.append((IndexPath(item: presenter.itemIndex, section: index), presenter))
+                }
+            }
+        }
         view.layoutIfNeeded()
+        await withCheckedContinuation { continuation in
+            let update = {
+                self.view.performBatchUpdates {
+                    self.content = target
+                    if layoutChanged { self.view.collectionViewLayout.invalidateLayout() }
+                    if !sections.isEmpty { self.view.reloadSections(sections) }
+                    if !replacements.isEmpty { self.view.reloadItems(at: replacements) }
+                    if !reconfigurations.isEmpty { self.view.reconfigureItems(at: reconfigurations) }
+                } completion: { _ in continuation.resume() }
+            }
+            if animated { update() }
+            else { UIView.performWithoutAnimation(update) }
+        }
+        views.reconfigureSupplementaries(supplementaries)
         return []
     }
 
@@ -186,7 +370,7 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
         _ collectionView: UICollectionView,
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
-        cell(collectionView, indexPath, cellPresenter(at: indexPath))
+        views.cell(at: indexPath, presenter: cellPresenter(at: indexPath))
     }
 
     func collectionView(
@@ -194,7 +378,11 @@ private final class ExternalDataSource: NSObject, CollectionDataSource, UICollec
         viewForSupplementaryElementOfKind kind: String,
         at indexPath: IndexPath
     ) -> UICollectionReusableView {
-        supplementary(collectionView, kind, indexPath, supplementaryPresenter(ofKind: kind, at: indexPath))
+        views.supplementary(
+            ofKind: kind,
+            at: indexPath,
+            presenter: supplementaryPresenter(ofKind: kind, at: indexPath)
+        )
     }
 }
 
@@ -227,6 +415,85 @@ private struct PublicPresenter: CellPresenter {
 
 @MainActor
 private final class PublicCell: UICollectionViewCell {}
+
+@MainActor
+private final class EditableSection: SectionController {
+    let id = "editable"
+    let updateContext = SectionUpdateContext()
+    var cells: [AnyCellPresenter] = []
+    var headers: [AnySupplementaryPresenter] = []
+    var height: CGFloat = 44
+
+    func captureContent() -> LayoutContent<CompositionalSectionLayout> {
+        let height = height
+        return LayoutContent(cells: cells, supplementaryViews: headers) { _ in
+            let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height))
+            let item = NSCollectionLayoutItem(layoutSize: size)
+            let section = NSCollectionLayoutSection(group: .vertical(layoutSize: size, subitems: [item]))
+            section.boundarySupplementaryItems = [NSCollectionLayoutBoundarySupplementaryItem(
+                layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .absolute(24)),
+                elementKind: UICollectionView.elementKindSectionHeader,
+                alignment: .top
+            )]
+            return section
+        }
+    }
+}
+
+private struct EditableCellPresenter: CellPresenter {
+    let id = 1
+    let text: String
+    let action: @MainActor () -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.text == rhs.text }
+
+    func configure(_ cell: EditableCell) {
+        cell.accessibilityLabel = text
+        cell.configurations += 1
+    }
+
+    func bind(to cell: EditableCell) { cell.action = action }
+}
+
+private struct EditableHeaderPresenter: SupplementaryPresenter {
+    let id = "header"
+    let text: String
+    let action: @MainActor () -> Void
+    var elementKind: String { Self.headerKind }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.text == rhs.text }
+
+    func configure(_ view: EditableHeader) {
+        view.accessibilityLabel = text
+        view.configurations += 1
+    }
+
+    func bind(to view: EditableHeader) { view.action = action }
+}
+
+private struct ReplacementCellPresenter: CellPresenter {
+    let id = 1
+    func configure(_ cell: ReplacementCell) {}
+}
+
+private struct ReplacementHeaderPresenter: SupplementaryPresenter {
+    let id = "header"
+    var elementKind: String { Self.headerKind }
+    func configure(_ view: ReplacementHeader) {}
+}
+
+@MainActor private final class EditableCell: UICollectionViewCell {
+    var configurations = 0
+    var action: (() -> Void)?
+}
+
+@MainActor private final class EditableHeader: UICollectionReusableView {
+    var configurations = 0
+    var action: (() -> Void)?
+}
+
+@MainActor private final class ReplacementCell: UICollectionViewCell {}
+@MainActor private final class ReplacementHeader: UICollectionReusableView {}
 
 @MainActor
 private final class PublicFixture {

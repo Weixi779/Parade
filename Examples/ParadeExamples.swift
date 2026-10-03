@@ -62,11 +62,10 @@ public final class AppStoreExampleViewController: UIViewController {
     )
     // This example injects Apple's implementation; the IM example uses Parade's default.
     private lazy var orchestrator = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: collectionView) {
-        view, cell, supplementary in
+        view, views in
         DiffableCollectionDataSource<CompositionalSectionLayout>(
             collectionView: view,
-            cellProvider: cell,
-            supplementaryProvider: supplementary
+            views: views
         )
     }
 

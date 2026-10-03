@@ -21,7 +21,7 @@ public struct CollectionSnapshot<Layout> {
     /// Validate each section completely before the next, preserving error order.
     init(_ sections: [SectionSnapshot<Layout>]) throws(ValidationFailure) {
         var sectionLocations = [AnyHashable: Int](minimumCapacity: sections.count)
-        var cellLocations: [AnyHashable: ItemLocation] = [:]
+        var cellLocations: [AnyHashable: (section: Int, item: Int)] = [:]
         for (sectionIndex, section) in sections.enumerated() {
             if let first = sectionLocations.updateValue(sectionIndex, forKey: section.id) {
                 throw ValidationFailure(
@@ -30,7 +30,7 @@ public struct CollectionSnapshot<Layout> {
                 )
             }
             for (item, presenter) in section.cells.enumerated() {
-                let location = ItemLocation(section: sectionIndex, item: item)
+                let location = (section: sectionIndex, item: item)
                 if let first = cellLocations.updateValue(location, forKey: presenter.id) {
                     throw ValidationFailure(
                         .duplicateCellId(String(describing: presenter.id)),

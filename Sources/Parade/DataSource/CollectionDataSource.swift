@@ -2,20 +2,10 @@
 
 import UIKit
 
-/// Parade's fixed dequeue, configuration and binding operation. Pass nil when
-/// the requested presenter cannot be resolved to use the diagnostic fallback.
-public typealias CollectionCellProvider = @MainActor (
-    UICollectionView, IndexPath, AnyCellPresenter?
-) -> UICollectionViewCell
-
-public typealias CollectionSupplementaryProvider = @MainActor (
-    UICollectionView, String, IndexPath, AnySupplementaryPresenter?
-) -> UICollectionReusableView
-
 /// Owns the current data and its UIKit updates for one collection view.
 ///
 /// Construct an instance using CollectionOrchestrator<Layout>'s makeDataSource closure.
-/// Use the supplied providers for views; Parade keeps registration, delegate
+/// Use the supplied CollectionViews for views; Parade keeps registration, delegate
 /// handling, view bindings and submission ordering. Do not replace the delegate.
 /// Start empty and submit updates only through the orchestrator.
 @MainActor

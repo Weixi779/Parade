@@ -47,9 +47,9 @@ extension AppSection {
 '''),
     'wrong-datasource-family': ('CompositionalSectionLayout', '''
 @MainActor func invalid(_ view: UICollectionView) {
-    _ = CollectionOrchestrator(collectionView: view, layout: .flow()) { view, cell, supplementary in
+    _ = CollectionOrchestrator(collectionView: view, layout: .flow()) { view, views in
         DiffableCollectionDataSource<CompositionalSectionLayout>(collectionView: view,
-            cellProvider: cell, supplementaryProvider: supplementary)
+            views: views)
     }
 }
 '''),

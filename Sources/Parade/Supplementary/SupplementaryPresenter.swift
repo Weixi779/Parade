@@ -13,9 +13,11 @@ import UIKit
 /// Id identifies the logical presentation at that address. The application's
 /// layout is responsible for requesting the corresponding kind and index.
 /// Opt into view visibility callbacks through `SupplementaryDisplayObserving`.
-public protocol SupplementaryPresenter: DiffableElement {
+public protocol SupplementaryPresenter: Equatable {
+    associatedtype Id: Hashable
     associatedtype View: UICollectionReusableView
 
+    var id: Id { get }
     @MainActor var elementKind: String { get }
     var itemIndex: Int { get }
     @MainActor func configure(_ view: View)
@@ -31,6 +33,13 @@ public extension SupplementaryPresenter {
     @MainActor static var footerKind: String { UICollectionView.elementKindSectionFooter }
     var itemIndex: Int { 0 }
     func bind(to view: View) {}
+}
+
+extension SupplementaryPresenter {
+    func equals(_ other: any SupplementaryPresenter) -> Bool {
+        guard type(of: self) == type(of: other), let other = other as? Self else { return false }
+        return self == other
+    }
 }
 
 @MainActor

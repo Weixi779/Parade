@@ -7,8 +7,7 @@ import UIKit
 @MainActor
 public final class DiffableCollectionDataSource<Layout>: CollectionDataSource {
     private let collectionView: UICollectionView
-    private let cellProvider: CollectionCellProvider
-    private let supplementaryProvider: CollectionSupplementaryProvider
+    private let views: CollectionViews
     private var current = CollectionSnapshot<Layout>.empty
     private var previous = CollectionSnapshot<Layout>.empty
     private var sectionIdentifiers = NativeIdentifiers()
@@ -20,12 +19,14 @@ public final class DiffableCollectionDataSource<Layout>: CollectionDataSource {
         let dataSource = UICollectionViewDiffableDataSource<Int, Int>(collectionView: collectionView) {
             [weak self] collectionView, indexPath, token in
             guard let self else { return nil }
-            return cellProvider(collectionView, indexPath, presenter(for: token))
+            return views.cell(at: indexPath, presenter: presenter(for: token))
         }
         dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
             guard let self else { return nil }
-            return supplementaryProvider(
-                collectionView, kind, indexPath, supplementaryPresenter(ofKind: kind, at: indexPath)
+            return views.supplementary(
+                ofKind: kind,
+                at: indexPath,
+                presenter: supplementaryPresenter(ofKind: kind, at: indexPath)
             )
         }
         return dataSource
@@ -33,12 +34,10 @@ public final class DiffableCollectionDataSource<Layout>: CollectionDataSource {
 
     public init(
         collectionView: UICollectionView,
-        cellProvider: @escaping CollectionCellProvider,
-        supplementaryProvider: @escaping CollectionSupplementaryProvider
+        views: CollectionViews
     ) {
         self.collectionView = collectionView
-        self.cellProvider = cellProvider
-        self.supplementaryProvider = supplementaryProvider
+        self.views = views
     }
 
     public var dataSource: any UICollectionViewDataSource { native }
@@ -119,7 +118,7 @@ public final class DiffableCollectionDataSource<Layout>: CollectionDataSource {
                 itemIdentifiers.insert(target.sections[$0.section].cells[$0.item].id)
             })
             await native.apply(snapshot, animatingDifferences: animated)
-            content.applySupplementaries(in: collectionView)
+            views.reconfigureSupplementaries(content.supplementaryUpdates)
         }
         previous = .empty
         collectionView.collectionViewLayout.invalidateLayout()

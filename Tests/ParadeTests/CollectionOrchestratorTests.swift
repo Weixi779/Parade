@@ -789,9 +789,10 @@ enum CollectionBackend: CaseIterable, Sendable {
         case .manual:
             CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view, diffAlgorithm: diffAlgorithm)
         case .native:
-            CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view) { view, cell, supplementary in
+            CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view) { view, views in
                 DiffableCollectionDataSource<CompositionalSectionLayout>(
-                    collectionView: view, cellProvider: cell, supplementaryProvider: supplementary
+                    collectionView: view,
+                    views: views
                 )
             }
         }

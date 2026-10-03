@@ -926,10 +926,10 @@ private final class Fixture {
         let view = UICollectionView(frame: frame, collectionViewLayout: UICollectionViewLayout())
         self.view = view
         var controlled: ControlledSource!
-        owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view) { view, cell, supplementary in
+        owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view) { view, views in
             let base: any CollectionDataSource<CompositionalSectionLayout> = native
-                ? DiffableCollectionDataSource<CompositionalSectionLayout>(collectionView: view, cellProvider: cell, supplementaryProvider: supplementary)
-                : DefaultCollectionDataSource<CompositionalSectionLayout>(collectionView: view, cellProvider: cell, supplementaryProvider: supplementary)
+                ? DiffableCollectionDataSource<CompositionalSectionLayout>(collectionView: view, views: views)
+                : StagedCollectionDataSource<CompositionalSectionLayout>(collectionView: view, views: views)
             let source = ControlledSource(base)
             controlled = source
             return source

@@ -9,7 +9,7 @@ import UIKit
 
 /// A supplementary presenter erased at the section's composition boundary.
 /// Preserves the original presenter so internal consumers can discover capabilities.
-public struct AnySupplementaryPresenter: DiffableElement {
+public struct AnySupplementaryPresenter: Equatable {
     public let id: AnyHashable
     public let elementKind: String
     public let itemIndex: Int
@@ -31,6 +31,11 @@ public struct AnySupplementaryPresenter: DiffableElement {
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.underlyingPresenter.equals(rhs.underlyingPresenter)
+    }
+
+    /// Compares concrete view registrations and element kinds, not placement or content.
+    public func canReuseView(with other: Self) -> Bool {
+        registrationKey == other.registrationKey
     }
 
     @MainActor

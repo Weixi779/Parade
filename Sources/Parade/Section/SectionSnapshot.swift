@@ -7,7 +7,7 @@ import UIKit
 /// One section's captured display version, including its identity and content.
 /// Queued updates and data sources use snapshots instead of rereading a mutable controller.
 /// Structural batches can derive intermediate snapshots while retaining layout identity.
-public struct SectionSnapshot<Layout>: DiffableSection {
+public struct SectionSnapshot<Layout> {
     public let id: AnyHashable
     public let cells: [AnyCellPresenter]
     public let supplementaryViews: [AnySupplementaryPresenter]
@@ -17,9 +17,14 @@ public struct SectionSnapshot<Layout>: DiffableSection {
         layout.value
     }
 
-    public var items: [AnyCellPresenter] { cells }
+    /// Compares one capture's layout identity, not its geometry or value equality.
+    /// Intermediate snapshots made with replacingCells(_:) retain this identity.
+    public func hasSameLayoutVersion(as other: Self) -> Bool {
+        layout === other.layout
+    }
 
-    public func isContentEqual(to other: Self) -> Bool {
+    /// Compares supplementary identities and content at each placement, excluding cells and layout.
+    public func hasSameSupplementaryContent(as other: Self) -> Bool {
         guard supplementaryViews.count == other.supplementaryViews.count else { return false }
         return other.supplementaryViews.allSatisfy { presenter in
             guard let previous = supplementary(
@@ -81,7 +86,7 @@ public struct SectionSnapshot<Layout>: DiffableSection {
     }
 
     /// Checks placement, identity, and registration; visual content may differ.
-    func hasCompatibleSupplementaries(with other: Self) -> Bool {
+    public func hasCompatibleSupplementaries(with other: Self) -> Bool {
         guard supplementaryViews.count == other.supplementaryViews.count else { return false }
         return other.supplementaryViews.allSatisfy { presenter in
             guard let previous = supplementary(
@@ -90,8 +95,7 @@ public struct SectionSnapshot<Layout>: DiffableSection {
             ) else {
                 return false
             }
-            return previous.id == presenter.id && previous.registrationKey ==
-                presenter.registrationKey
+            return previous.id == presenter.id && previous.canReuseView(with: presenter)
         }
     }
 }

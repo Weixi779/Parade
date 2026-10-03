@@ -2,7 +2,7 @@
 
 import UIKit
 
-/// Fixed view-update rules shared by manual batches and native snapshots.
+/// A content-update plan shared by manual batches and native snapshots; performs no view operations.
 struct CollectionContentUpdates<Layout> {
     var reloadedSections = IndexSet()
     var replacedCells: [IndexPath] = []
@@ -22,14 +22,14 @@ struct CollectionContentUpdates<Layout> {
     ) {
         for (sectionIndex, section) in target.sections.enumerated() {
             if let previous = source.sectionsById[section.id] {
-                if previous.layout !== section.layout { hasLayoutUpdates = true }
+                if !previous.hasSameLayoutVersion(as: section) { hasLayoutUpdates = true }
                 // A new supplementary topology or view class replaces the section.
                 guard previous.hasCompatibleSupplementaries(with: section) else {
                     reloadedSections.insert(sectionIndex)
                     continue
                 }
                 let sectionChanged = updatedSections?.contains(sectionIndex)
-                    ?? !previous.isContentEqual(to: section)
+                    ?? !previous.hasSameSupplementaryContent(as: section)
                 if sectionChanged {
                     for presenter in section.supplementaryViews {
                         if let old = previous.supplementary(
@@ -45,7 +45,7 @@ struct CollectionContentUpdates<Layout> {
             for (itemIndex, presenter) in section.cells.enumerated() {
                 guard let previous = source.cellsById[presenter.id] else { continue }
                 let path = IndexPath(item: itemIndex, section: sectionIndex)
-                if previous.registrationKey != presenter.registrationKey {
+                if !previous.canReuseView(with: presenter) {
                     replacedCells.append(path)
                 } else if updatedItems?.contains(ItemLocation(section: sectionIndex, item: itemIndex))
                     ?? (previous != presenter) {
@@ -53,19 +53,5 @@ struct CollectionContentUpdates<Layout> {
                 }
             }
         }
-    }
-
-    @MainActor
-    func applySupplementaries(in collectionView: UICollectionView) {
-        var changed = false
-        for update in supplementaryUpdates {
-            guard let view = collectionView.supplementaryView(
-                forElementKind: update.presenter.elementKind, at: update.indexPath
-            ) else { continue }
-            update.presenter.configure(view)
-            view.setNeedsLayout()
-            changed = true
-        }
-        if changed { collectionView.collectionViewLayout.invalidateLayout() }
     }
 }

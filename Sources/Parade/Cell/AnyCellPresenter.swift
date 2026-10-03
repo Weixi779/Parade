@@ -9,7 +9,7 @@ import UIKit
 
 /// A cell presenter erased only at the section's composition boundary.
 /// Preserves the original presenter so internal consumers can discover capabilities.
-public struct AnyCellPresenter: DiffableElement {
+public struct AnyCellPresenter: Equatable {
     public let id: AnyHashable
 
     let underlyingPresenter: any CellPresenter
@@ -25,6 +25,11 @@ public struct AnyCellPresenter: DiffableElement {
     /// Identity and registration compatibility are compared separately by Parade.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.underlyingPresenter.equals(rhs.underlyingPresenter)
+    }
+
+    /// Compares concrete view registrations independently of identity and content.
+    public func canReuseView(with other: Self) -> Bool {
+        registrationKey == other.registrationKey
     }
 
     @MainActor

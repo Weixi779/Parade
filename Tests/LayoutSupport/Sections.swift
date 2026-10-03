@@ -244,11 +244,10 @@ private final class CardFlowDelegate: NSObject, UICollectionViewDelegateFlowLayo
             collectionViewLayout: UICollectionViewFlowLayout()
         )
         if diffable {
-            owner = CollectionOrchestrator(collectionView: view, layout: layout) { view, cell, supplementary in
+            owner = CollectionOrchestrator(collectionView: view, layout: layout) { view, views in
                 DiffableCollectionDataSource(
                     collectionView: view,
-                    cellProvider: cell,
-                    supplementaryProvider: supplementary
+                    views: views
                 )
             }
         } else {

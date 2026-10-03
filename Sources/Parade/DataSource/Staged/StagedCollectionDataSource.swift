@@ -2,12 +2,11 @@
 
 import UIKit
 
-/// Parade's default data source: replaceable sectioned diff and validated UIKit batches.
+/// Staged UIKit updates: replaceable sectioned diff and validated UIKit batches.
 @MainActor
-public final class DefaultCollectionDataSource<Layout>: NSObject, CollectionDataSource, UICollectionViewDataSource {
+public final class StagedCollectionDataSource<Layout>: NSObject, CollectionDataSource, UICollectionViewDataSource {
     private let collectionView: UICollectionView
-    private let cellProvider: CollectionCellProvider
-    private let supplementaryProvider: CollectionSupplementaryProvider
+    private let views: CollectionViews
     private let diffAlgorithm: any SectionedDiffAlgorithm
     private var sectionLocations: [AnyHashable: Int] = [:]
     private var cellLocations: [AnyHashable: IndexPath] = [:]
@@ -27,13 +26,11 @@ public final class DefaultCollectionDataSource<Layout>: NSObject, CollectionData
 
     public init(
         collectionView: UICollectionView,
-        cellProvider: @escaping CollectionCellProvider,
-        supplementaryProvider: @escaping CollectionSupplementaryProvider,
+        views: CollectionViews,
         diffAlgorithm: any SectionedDiffAlgorithm = SectionedDiff()
     ) {
         self.collectionView = collectionView
-        self.cellProvider = cellProvider
-        self.supplementaryProvider = supplementaryProvider
+        self.views = views
         self.diffAlgorithm = diffAlgorithm
         super.init()
     }
@@ -129,7 +126,7 @@ public final class DefaultCollectionDataSource<Layout>: NSObject, CollectionData
         } else {
             sections = target.sections
         }
-        content.applySupplementaries(in: collectionView)
+        views.reconfigureSupplementaries(content.supplementaryUpdates)
         return []
     }
 
@@ -143,7 +140,7 @@ public final class DefaultCollectionDataSource<Layout>: NSObject, CollectionData
         _ collectionView: UICollectionView,
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
-        cellProvider(collectionView, indexPath, cellPresenter(at: indexPath))
+        views.cell(at: indexPath, presenter: cellPresenter(at: indexPath))
     }
 
     public func collectionView(
@@ -151,7 +148,11 @@ public final class DefaultCollectionDataSource<Layout>: NSObject, CollectionData
         viewForSupplementaryElementOfKind kind: String,
         at indexPath: IndexPath
     ) -> UICollectionReusableView {
-        supplementaryProvider(collectionView, kind, indexPath, supplementaryPresenter(ofKind: kind, at: indexPath))
+        views.supplementary(
+            ofKind: kind,
+            at: indexPath,
+            presenter: supplementaryPresenter(ofKind: kind, at: indexPath)
+        )
     }
 
     private func section(at index: Int) -> SectionSnapshot<Layout>? {

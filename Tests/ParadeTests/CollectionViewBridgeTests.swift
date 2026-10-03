@@ -734,7 +734,7 @@ private final class Fixture {
     let window: UIWindow
     let view: UICollectionView
     let owner: CollectionOrchestrator<CompositionalSectionLayout>
-    let defaultSource: DefaultCollectionDataSource<CompositionalSectionLayout>
+    let defaultSource: StagedCollectionDataSource<CompositionalSectionLayout>
 
     init(header: Bool = false) {
         let layout = UICollectionViewFlowLayout()
@@ -743,7 +743,7 @@ private final class Fixture {
         let frame = CGRect(x: 0, y: 0, width: 320, height: 480)
         view = UICollectionView(frame: frame, collectionViewLayout: layout)
         owner = CollectionOrchestrator<CompositionalSectionLayout>(collectionView: view)
-        defaultSource = view.dataSource as! DefaultCollectionDataSource<CompositionalSectionLayout>
+        defaultSource = view.dataSource as! StagedCollectionDataSource<CompositionalSectionLayout>
         let controller = UIViewController()
         controller.view.frame = frame
         controller.view.addSubview(view)
