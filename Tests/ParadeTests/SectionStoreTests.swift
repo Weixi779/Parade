@@ -7,6 +7,44 @@ import Testing
 @MainActor
 @Suite("Section instance reconciliation", .timeLimit(.minutes(1)))
 struct SectionStoreTests {
+    @Test("Retaining definitions reorder and remove instances without replaying inputs, then accept typed updates")
+    func retainingDefinitionsPreserveStateAndType() throws {
+        let store = SectionStore<CompositionalSectionLayout>()
+        try store.reconcile([definition("a", value: "server"), definition("b", value: "second")])
+        let a = try #require(store.controllers.first as? Controller<Regular>)
+        let b = try #require(store.controllers.last as? Controller<Regular>)
+        a.value = "local"
+        let reversed = Array(store.retainingDefinitions.reversed())
+        try store.reconcile(reversed)
+        #expect(store.controllers.first === b)
+        #expect(store.controllers.last === a)
+        #expect(a.value == "local")
+
+        try store.reconcile(store.retainingDefinitions.filter { $0.id == AnyHashable("a") })
+        #expect(store.controllers.first === a)
+        #expect(a.value == "local")
+        try store.reconcile([definition("a", value: "fresh")])
+        #expect(store.controllers.first === a)
+        #expect(a.value == "fresh")
+    }
+
+    @Test("Rejected retaining compositions preserve membership and local state")
+    func failedRetainingComposition() async throws {
+        let store = SectionStore<CompositionalSectionLayout>()
+        try store.reconcile([definition("a", value: "server"), definition("b", value: "second")])
+        let a = try #require(store.controllers.first as? Controller<Regular>)
+        a.value = "local"
+        enum Failure: Error { case rejected }
+        await #expect(throws: Failure.self) {
+            try await store.reconcile(Array(store.retainingDefinitions.reversed())) { _ in
+                throw Failure.rejected
+            }
+        }
+        #expect(store.ids == [AnyHashable("a"), AnyHashable("b")])
+        #expect(store.controllers.first === a)
+        #expect(a.value == "local")
+    }
+
     @Test("Even an empty composition reaches the caller's submission boundary")
     func emptyComposition() async throws {
         let store = SectionStore<CompositionalSectionLayout>()

@@ -37,14 +37,14 @@ See [Announcing Swift 6](https://www.swift.org/blog/announcing-swift-6/).
 The package exposes one library and module, `Parade`, with no external dependencies.
 In Xcode, choose **File > Add Package Dependencies**, enter
 `https://github.com/Weixi779/Parade.git`, and select the `Parade` product.
-Use **Up to Next Major Version** from `1.0.0`.
+Use **Up to Next Major Version** from `1.1.0`.
 
 For a Swift package, add the dependency and product to your `Package.swift`:
 
 ```swift
 .package(
     url: "https://github.com/Weixi779/Parade.git",
-    from: "1.0.0"
+    from: "1.1.0"
 )
 ```
 
@@ -348,10 +348,25 @@ succeeds. Retained sections receive new input before the callback; the chain abo
 submits membership and their content as one validated target. Select only the retained
 sections whose content should participate if some sections submit independently.
 
+For a structural-only change, obtain fresh retaining definitions from the store:
+
+```swift
+let definitions = sections.retainingDefinitions.filter { $0.id != removedID }
+try await sections.reconcile(definitions) { change in
+    try await orchestrator.compose(change.controllers).apply()
+}
+```
+
+These definitions preserve existing instances and their type associations without
+replaying old input or calling an updater. A later typed input definition can still
+update the same instance. They are short-lived descriptions of the current instances:
+do not cache them across submissions. Retaining definitions hold those instances
+alive; the store itself does not cache removed instances.
+
 Reuse requires the same ID, Input type, and Controller type. Changing either type
 replaces the instance. Duplicate IDs reject the whole input before any creation or
-update closure runs. Every surviving instance receives the current input and current
-update closure, even for repeated input. The store retains neither old inputs nor
+update closure runs. Every surviving instance with a typed input definition receives the current input
+and update closure, even for repeated input. The store retains neither old inputs nor
 definition closures. `Change.retained` follows target order; `Change.removed` follows
 previous order and includes same-ID replacements. Keeping a change retains its
 controllers, including removed instances.

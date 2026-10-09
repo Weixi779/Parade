@@ -22,7 +22,8 @@ public final class SectionStore<Layout> {
         }
 
         /// Instances reused from the previous membership, in target order.
-        /// Their business inputs have been updated; their presentations have not been submitted.
+        /// Fresh definitions have applied their inputs; retaining definitions leave state untouched.
+        /// Their presentations have not been submitted.
         public let retained: [any SectionController<Layout>]
 
         /// Instances absent from the target, in previous order. Includes same-ID replacements.
@@ -42,6 +43,13 @@ public final class SectionStore<Layout> {
 
     public var controllers: [any SectionController<Layout>] {
         orderedInstances.map { $0.controller }
+    }
+
+    /// Fresh, short-lived definitions for reordering/removing current instances without
+    /// applying inputs. Do not cache them: they retain the instances at the time of access.
+    /// Typed definitions supplied in a later reconciliation still update those same instances.
+    public var retainingDefinitions: [SectionDefinition<Layout>] {
+        orderedInstances.map { SectionDefinition(retaining: $0) }
     }
 
     /// Accepts the resolved instances and order immediately, without submitting presentations.

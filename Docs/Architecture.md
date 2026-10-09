@@ -80,6 +80,12 @@ type. The application retains the store, supplies business mappings, and seriali
 reconciliations. The store keeps the instances and type associations, not old input
 values or definition closures. Removed instances are not cached for reinsertion.
 
+For structural-only changes, `retainingDefinitions` describes the current instances
+without applying input or invoking update callbacks. This preserves local state and
+the stored Input/Controller type association for future typed updates. These
+definitions retain the captured instances and must not be cached across submissions.
+Membership submission and selection of content updates still belong to the caller.
+
 The async reconciliation callback runs for every valid input, including content-only
 changes and empty lists. It can submit `compose(change.controllers).updating(change.retained).apply()`;
 the store accepts the new order only after that callback succeeds. Failure preserves

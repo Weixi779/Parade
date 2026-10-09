@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.0 — 2026-10-09
+
+### Added
+
+- `SectionStore.retainingDefinitions` produces short-lived definitions for the
+  current instances. Reorder or remove sections without replaying old input or
+  invoking update callbacks, preserving section-owned state.
+- Retaining definitions preserve the Input/Controller type association, so later
+  typed definitions can update the same instances.
+- Tests cover structural changes followed by typed updates and failed submissions
+  that preserve membership and local state.
+
+### Documentation
+
+- Document retaining definitions and their lifetime: they retain captured instances
+  and must not be cached across submissions.
+- Clarify that retained instances receive input only when supplied a typed input
+  definition.
+
+This is an additive release. iOS 16, Swift 6, and the dependency-free package
+remain unchanged.
+
 ## 1.0.0
 
 Parade 1.0 brings section controllers, composable submissions, typed Compositional /
