@@ -37,14 +37,14 @@ See [Announcing Swift 6](https://www.swift.org/blog/announcing-swift-6/).
 The package exposes one library and module, `Parade`, with no external dependencies.
 In Xcode, choose **File > Add Package Dependencies**, enter
 `https://github.com/Weixi779/Parade.git`, and select the `Parade` product.
-Use **Up to Next Major Version** from `1.1.0`.
+Use **Up to Next Major Version** from `1.1.1`.
 
 For a Swift package, add the dependency and product to your `Package.swift`:
 
 ```swift
 .package(
     url: "https://github.com/Weixi779/Parade.git",
-    from: "1.1.0"
+    from: "1.1.1"
 )
 ```
 
