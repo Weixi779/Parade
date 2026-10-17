@@ -9,6 +9,26 @@ import UIKit
 @MainActor
 @Suite("Collection orchestration")
 struct CollectionOrchestratorTests {
+    @Test("The first batch inserts populated and empty sections", arguments: [false, true])
+    func initialSectionsWithEmptySection(animated: Bool) async throws {
+        let fixture = CollectionFixture()
+        defer { fixture.close() }
+        #expect(fixture.collectionView.numberOfSections == 0)
+        fixture.collectionView.resetCounts()
+
+        try await fixture.orchestrator.compose([
+            textSection("first", [1, 2, 3, 4, 5, 6]),
+            textSection("empty", []),
+            textSection("last", [7]),
+        ]).apply(animated: animated)
+
+        #expect(fixture.collectionView.numberOfSections == 3)
+        #expect((0 ..< 3).map { fixture.collectionView.numberOfItems(inSection: $0) } == [6, 0, 1])
+        #expect(fixture.collectionView.batches == 1)
+        #expect(fixture.collectionView.reloads == 0)
+        #expect(fixture.orchestrator.indexPath(for: 7) == IndexPath(item: 0, section: 2))
+    }
+
     @Test("Content-equal submissions refresh actions without reconfiguring the cell", arguments: CollectionBackend.allCases)
     func behaviorOnlyUpdate(backend: CollectionBackend) async throws {
         let fixture = CollectionFixture(backend: backend)

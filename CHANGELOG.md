@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Avoid explicit layout invalidation inside staged structural batches, preventing iOS 17 from reading the new snapshot as pre-update counts. Cover first insertion with both populated and empty sections.
+
 ## 1.1.0 — 2026-10-09
 
 ### Added

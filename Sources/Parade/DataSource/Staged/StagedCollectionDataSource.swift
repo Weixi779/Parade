@@ -84,7 +84,8 @@ public final class StagedCollectionDataSource<Layout>: NSObject, CollectionDataS
         for batch in plan.batches {
             await performBatch(animated: animated) {
                 self.sections = batch.sections
-                self.collectionView.collectionViewLayout.invalidateLayout()
+                // Structural edits invalidate the layout through UIKit. Explicit invalidation here
+                // makes iOS 17 re-read the new snapshot as the pre-update item counts.
                 if !batch.deletedSections.isEmpty {
                     self.collectionView.deleteSections(batch.deletedSections)
                 }
