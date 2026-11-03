@@ -2,7 +2,7 @@
 
 2026-09-17 的第一轮 UI diff 实验。这里比较匹配计算成本、生成的 UI 操作数量，以及通过 UIKit 完成一次更新的成本。它是 Parade 选择 diff 方向的证据，不是公共 API，也不是生产选型结论。
 
-这一轮覆盖 flat diff 的完整比较，以及 UIKit 上的单 section 更新；额外的 section 插入、重排和跨 section 身份场景也在这里，但自研 sectioned planner 尚未实现，不能用单 section 结果证明多 section 行为或性能。后续轮次按同样结构补进 `Benchmarks/`。
+这一轮覆盖 flat diff 的完整比较，以及 UIKit 上的单 section 更新；额外的 section 插入、重排和跨 section 身份场景也在这里，但自研 sectioned planner 尚未实现，不能用单 section 结果证明多 section 行为或性能。后续的 [Section 与执行顺序实验](round2/README.md)、[完整更新对照](round3/README.md)和[计时诊断](round3/diagnostics/README.md)已归档。先读[调查总览](OVERVIEW.md)可以看到结论如何变化。
 
 ## 这是什么
 
@@ -152,7 +152,7 @@ python3 Benchmarks/DiffBenchmark/report.py
 
 没有通过改变编译模式或增删上游代码来美化某个候选。
 
-## 后续值得研究的方向
+## 第一轮结束时提出的后续方向
 
 1. **计算成本 vs 操作成本**：left/right rotation 暴露移动选择的方向性；比较为了更少 UI move 付出的额外计算是否值得。
 2. **Section 局部更新**：固定页面总量，只改一个 section，比较重算全量与已知局部边界。但增量方案不能免费得到其他候选没有的变更提示，应独立分组。

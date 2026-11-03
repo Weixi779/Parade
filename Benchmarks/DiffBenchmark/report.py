@@ -25,7 +25,7 @@ scenarios = ['no-op','append-5pct','prepend-5pct','delete-5pct','rotate-left-1',
              'update-5pct','adjacent-swap','shuffle','reverse','replace-all','mixed']
 lines = ['# Parade UI diff 实测结果','',
          '这是 2026-09-17 的本机实验快照；实验合同、正确性检查、实现边界和复现方式见 [README](README.md)。',
-         '', '## 当前判断', '',
+         '', '## 第一轮结束时的判断', '',
          '建议优先继续验证 **Key + LIS**，保留唯一 ID 的 Heckel 实现作为计算成本对照。理由是输出操作质量，尚不是生产选型结论。',
          '', '1. **Heckel 的线性计算不保证更少 UI 工作。** 10,000 项左旋一位，DifferenceKit 与当前 Unique-Heckel 生成 9,999 个 move，LIS 与标准库只生成 1 个。反向旋转时四者都是 1 个 move；这暴露了移动选择策略的方向性。',
          '2. **LIS 的优势依赖场景。** 随机打乱时，多数项原本就必须移动，LIS 节省的操作有限。无变化、增删导致整体平移时，所有候选都避免了多余 move；不能把 index 改变直接算作移动。',

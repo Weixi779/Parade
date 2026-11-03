@@ -73,3 +73,14 @@ fastlane/test_output
 Benchmarks/DiffBenchmark/.build/
 Benchmarks/DiffBenchmark/build/
 Benchmarks/DiffBenchmark/results/
+
+# Subsequent diff benchmark rounds and diagnostics
+Benchmarks/DiffBenchmark/**/build/
+Benchmarks/DiffBenchmark/**/results/
+Benchmarks/DiffBenchmark/**/logs/
+Benchmarks/DiffBenchmark/**/__pycache__/
+Benchmarks/DiffBenchmark/round3/diagnostics/*/probe-*.json
+Benchmarks/DiffBenchmark/round3/diagnostics/*/*.log
+Benchmarks/DiffBenchmark/round3/diagnostics/*/environment.json
+Benchmarks/DiffBenchmark/round3/diagnostics/*/runtime.json
+Benchmarks/DiffBenchmark/round3/diagnostics/validation.json
