@@ -27,22 +27,22 @@ public struct SectionDefinition<Layout> {
             if let previous = previous as? SectionInstance<Layout, Input, Controller> {
                 update(previous.value, input)
                 precondition(previous.value.id == id, "Updating a section must preserve its ID")
-                return previous
+                return (previous, didUpdateInput: true)
             }
 
             let controller = make(input)
             precondition(controller.id == id, "Section and controller IDs must match")
-            return SectionInstance<Layout, Input, Controller>(controller)
+            return (SectionInstance<Layout, Input, Controller>(controller), didUpdateInput: false)
         }
     }
 
     /// Keeps the stored type association without retaining or replaying an old input.
     init(retaining instance: any StoredSection<Layout>) {
         id = instance.id
-        resolve = { _ in instance }
+        resolve = { _ in (instance, didUpdateInput: false) }
     }
 
-    let resolve: @MainActor ((any StoredSection<Layout>)?) -> any StoredSection<Layout>
+    let resolve: @MainActor ((any StoredSection<Layout>)?) -> (instance: any StoredSection<Layout>, didUpdateInput: Bool)
 }
 
 @MainActor

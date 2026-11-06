@@ -7,6 +7,74 @@ import Testing
 @MainActor
 @Suite("Section instance reconciliation", .timeLimit(.minutes(1)))
 struct SectionStoreTests {
+    @Test("Queries use accepted or target membership and preserve type order")
+    func typedQueries() async throws {
+        let store = SectionStore<CompositionalSectionLayout>()
+        try store.reconcile([definition("a"), definition("b"), definition("c")])
+        let original: Controller<Regular>? = store.controller(for: "a")
+        let a = try #require(original)
+        try await store.reconcile([
+            definition("c"),
+            SectionDefinition(id: "a", input: "replacement", make: {
+                Controller<Featured>("a", value: $0)
+            }, update: { $0.value = $1 }),
+            definition("new"),
+        ]) { change in
+            let query: any SectionControllerQuery<CompositionalSectionLayout> = change
+            #expect(query.controller(for: "a", as: Controller<Regular>.self) == nil)
+            #expect(query.controller(for: "a", as: Controller<Featured>.self)?.value == "replacement")
+            #expect(query.controller(for: "missing", as: Controller<Regular>.self) == nil)
+            #expect(query.controllers(ofType: Controller<Regular>.self).map(\.id) == ["c", "new"])
+            #expect(store.controller(for: "a", as: Controller<Regular>.self) === a)
+            #expect(store.controller(for: "new", as: Controller<Regular>.self) == nil)
+            #expect(store.controllers(ofType: Controller<Regular>.self).map(\.id) == ["a", "b", "c"])
+        }
+        let query: any SectionControllerQuery<CompositionalSectionLayout> = store
+        let replacement: Controller<Featured>? = query.controller(for: "a")
+        #expect(replacement != nil)
+        #expect(query.controller(for: "a", as: Controller<Regular>.self) == nil)
+        #expect(query.controller(for: "b", as: Controller<Regular>.self) == nil)
+        #expect(query.controllers(ofType: Controller<Regular>.self).map(\.id) == ["c", "new"])
+    }
+
+    @Test("Input updates include only fresh survivors in target order")
+    func inputUpdateClassification() throws {
+        let store = SectionStore<CompositionalSectionLayout>()
+        let initial = try store.reconcile([definition("a"), definition("b"), definition("c"), definition("d")])
+        #expect(initial.inputUpdated.isEmpty)
+        let retainingB = try #require(store.retainingDefinitions.first { $0.id == AnyHashable("b") })
+        let change = try store.reconcile([
+            definition("d"), retainingB, definition("new"), definition("a"),
+            SectionDefinition(id: "c", input: 42, make: {
+                Controller<Regular>("c", value: String($0))
+            }, update: { $0.value = String($1) }),
+        ])
+        #expect(ids(change.retained) == ["d", "b", "a"])
+        #expect(ids(change.inputUpdated) == ["d", "a"])
+        #expect(ids(change.removed) == ["c"])
+        let reordered = try store.reconcile(Array(store.retainingDefinitions.reversed()))
+        #expect(reordered.inputUpdated.isEmpty)
+        let empty = try store.reconcile([])
+        #expect(empty.inputUpdated.isEmpty)
+    }
+
+    @Test("Input update facts do not persist across failed submissions")
+    func inputUpdateRetry() async throws {
+        let store = SectionStore<CompositionalSectionLayout>()
+        try store.reconcile([definition("a", value: "old")])
+        await #expect(throws: Rejection.failed) {
+            try await store.reconcile([definition("a", value: "pending")]) { change in
+                #expect(ids(change.inputUpdated) == ["a"])
+                throw Rejection.failed
+            }
+        }
+        let retainingRetry = try store.reconcile(store.retainingDefinitions)
+        #expect(retainingRetry.inputUpdated.isEmpty)
+        #expect(store.controller(for: "a", as: Controller<Regular>.self)?.value == "pending")
+        let freshRetry = try store.reconcile([definition("a", value: "pending")])
+        #expect(ids(freshRetry.inputUpdated) == ["a"])
+    }
+
     @Test("Retaining definitions reorder and remove instances without replaying inputs, then accept typed updates")
     func retainingDefinitionsPreserveStateAndType() throws {
         let store = SectionStore<CompositionalSectionLayout>()
@@ -351,13 +419,19 @@ struct SectionStoreTests {
             try await store.reconcile([definition("new"), definition("a", value: "pending")]) { change in
                 #expect(ids(change.controllers) == ["new", "a"])
                 #expect(ids(change.removed) == ["b"])
+                let pending: Controller<Regular>? = change.controller(for: "new")
+                #expect(pending != nil)
+                #expect(ids(change.inputUpdated) == ["a"])
                 await gate.pause()
+                #expect(change.controller(for: "new", as: Controller<Regular>.self) === pending)
             }
         }
         await gate.waitUntilStarted()
         #expect(store.ids == [AnyHashable("a"), AnyHashable("b")])
         #expect(store.controllers.first === a)
         #expect(a.value == "pending")
+        #expect(store.controller(for: "new", as: Controller<Regular>.self) == nil)
+        #expect(store.controller(for: "a", as: Controller<Regular>.self) === a)
         gate.resume()
         let change = try await submission.value
 

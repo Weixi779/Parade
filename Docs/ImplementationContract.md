@@ -35,7 +35,8 @@ typed layout integration, section-controller naming and composable collection up
   the resulting ordered instances. `reconcile(_:apply:)` awaits its callback for every
   valid reconciliation, including content-only changes and empty lists, then accepts
   membership. Both return `Change` with target controllers, retained instances in target
-  order, removals in previous order, and an instance/order change flag.
+  order, input-updated survivors in target order, removals in previous order, and an
+  instance/order change flag.
 - Definition matching uses ID plus Input and Controller types. New instances receive
   only `make(input)`; survivors receive the current `update(controller, input)` even
   for repeated input. IDs must remain stable and match the definition. Duplicate IDs
@@ -47,6 +48,24 @@ typed layout integration, section-controller naming and composable collection up
   retains no previous inputs or definition closures and never captures or submits
   presentations. The callback can submit membership and retained content together with
   `compose(change.controllers).updating(change.retained).apply()`.
+- `SectionStore` and `Change` conform to `SectionControllerQuery<Layout>`. Point
+  queries constrain the ID to the requested Controller.Id and return nil for absent
+  IDs or incompatible controller types. Store uses its accepted-membership index;
+  Change scans its target membership. Type filtering preserves membership order.
+  Query results are live instances, not attachment or presentation snapshots.
+- `Change.inputUpdated` is the target-ordered subset of `retained` whose definition
+  actually executed its update closure. Equal repeated input counts; creation,
+  replacement, and retaining definitions do not. It is per-reconciliation evidence,
+  not dirty tracking, equality comparison, or a delivery receipt. A retaining-only
+  retry after failure has no input updates, even if prior mutations remain unpresented.
+  Callers select final content updates, including extra position/accessibility changes.
+- Serialize the full async reconciliation; MainActor isolation does not serialize
+  operations across suspension. A page deriving definitions from current membership
+  must read that membership and build definitions inside its serialized operation.
+  Collection FIFO orders captured submissions, not definition generation, business
+  handoffs, animations, or cursor settlement. Do not reenter the same store.
+  A failure after successful reconciliation cannot undo accepted membership.
+  See [Home and Story examples](PodcastMigration.md#store-接纳与交付接入方式).
 - `compose(_:)` and `update(_:)` construct a `CollectionUpdate` without capture or queueing.
   It is a value description retaining its collection and sections. `updating(_:)` adds
   selections, deduplicated by instance. Copies are independent; each `apply` captures fresh

@@ -86,6 +86,13 @@ the stored Input/Controller type association for future typed updates. These
 definitions retain the captured instances and must not be cached across submissions.
 Membership submission and selection of content updates still belong to the caller.
 
+Store and Change implement `SectionControllerQuery<Layout>` for typed point and
+ordered type queries. Store queries accepted membership through its ID index;
+Change queries its own target membership. Neither represents delivered content.
+`Change.inputUpdated` reports the target-ordered subset of survivors whose current
+input updater ran. It does not compare input values or retain dirty state across
+submissions. The caller still selects presentation updates and owns business sequencing.
+
 The async reconciliation callback runs for every valid input, including content-only
 changes and empty lists. It can submit `compose(change.controllers).updating(change.retained).apply()`;
 the store accepts the new order only after that callback succeeds. Failure preserves

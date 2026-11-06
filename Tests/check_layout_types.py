@@ -36,6 +36,27 @@ extension AppSection {
     try await values.compose([CompositionalCards(cards: [])]).apply()
 }
 '''),
+    'store-query-protocol': (None, """
+@MainActor func query(_ source: any SectionControllerQuery<FlowSectionLayout>) {
+    let _: FlowCards? = source.controller(for: "cards")
+    _ = source.controller(for: "cards", as: FlowCards.self)
+    _ = source.controllers(ofType: FlowCards.self)
+}
+@MainActor func use(_ store: SectionStore<FlowSectionLayout>, _ change: SectionStore<FlowSectionLayout>.Change) {
+    query(store)
+    query(change)
+}
+"""),
+    'store-query-wrong-id': ('cannot convert', """
+@MainActor func invalid(_ source: any SectionControllerQuery<FlowSectionLayout>) {
+    _ = source.controller(for: 42, as: FlowCards.self)
+}
+"""),
+    'store-query-wrong-layout': ('requires the types', """
+@MainActor func invalid(_ source: any SectionControllerQuery<CompositionalSectionLayout>) {
+    _ = source.controllers(ofType: FlowCards.self)
+}
+"""),
     'wrong-layout-family': ('cannot convert', '''
 @MainActor func invalid(_ view: UICollectionView, log: EventLog) {
     let owner = CollectionOrchestrator(collectionView: view, layout: .compositional())

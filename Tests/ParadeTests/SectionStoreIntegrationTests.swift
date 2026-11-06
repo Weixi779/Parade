@@ -7,6 +7,26 @@ import UIKit
 @MainActor
 @Suite("SectionStore<CompositionalSectionLayout> presentation integration", .timeLimit(.minutes(1)))
 struct SectionStoreIntegrationTests {
+    @Test("Input selection updates fresh survivors without presenting retained local edits", arguments: CollectionBackend.allCases)
+    func selectiveInputSubmission(backend: CollectionBackend) async throws {
+        let fixture = Fixture(backend: backend)
+        defer { fixture.close() }
+        let store = SectionStore<CompositionalSectionLayout>()
+        try await store.reconcile([definition("a", items: [1]), definition("b", items: [2])]) { change in
+            try await fixture.owner.compose(change.controllers).apply(animated: false)
+        }
+        let b = try #require(store.controller(for: "b", as: Section<Regular>.self))
+        b.input.title = "local edit"
+        let retainingB = try #require(store.retainingDefinitions.last)
+        try await store.reconcile([definition("a", items: [1], title: "fresh"), retainingB, definition("new", items: [3])]) { change in
+            try await fixture.owner.compose(change.controllers).updating(change.inputUpdated).apply(animated: false)
+        }
+        #expect(fixture.view.cellForItem(at: IndexPath(item: 0, section: 0))?.accessibilityLabel == "fresh:1")
+        #expect(fixture.view.cellForItem(at: IndexPath(item: 0, section: 1))?.accessibilityLabel == "value:2")
+        #expect(fixture.view.cellForItem(at: IndexPath(item: 0, section: 2))?.accessibilityLabel == "value:3")
+        #expect(b.input.title == "local edit")
+    }
+
     @Test("Content-only reconciliation submits once and preserves visible cells and local state", arguments: CollectionBackend.allCases)
     func contentSubmission(backend: CollectionBackend) async throws {
         let fixture = Fixture(backend: backend)

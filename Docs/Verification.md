@@ -1,5 +1,59 @@
 # Verification
 
+## 1.2.0 release preparation — 2026-11-06
+
+Prepared the additive Store query / input-update release, dated 2026-11-06.
+README installation examples now target 1.2.0. No measurement layout or Story
+animation implementation is included. No release commit, tag, push, or GitHub
+Release has been created by this preparation.
+
+Validation uses Xcode 27.1 (27A9275). The unchanged production/test sources passed
+**157 tests in 13 suites** on iOS 27.0 and **8 public API compiler checks** earlier
+in this session (details below). Additional release checks:
+
+| Check | Result |
+| --- | --- |
+| SwiftPM Release build for `arm64-apple-ios16.0`, warnings as errors | Passed, no warnings |
+| Public IM / Store example build | Passed |
+| IM / Store simulator smoke checks, both data sources | All 10 passed |
+| LayoutDemo Xcode project, generic iOS Simulator destination | Build succeeded |
+| Whitespace / patch check | Passed |
+
+Artifacts: `/private/tmp/Parade-1.2.0-release.log`,
+`/private/tmp/Parade-1.2.0-layout.log`, `/private/tmp/Parade-1.2.0-smoke.json`.
+LayoutDemo emitted the existing App Intents metadata-extraction warning.
+
+Only Xcode 27.1 is installed locally. Swift 6 language mode and an iOS 16 deployment
+target do not establish Swift 6.0 compiler or iOS 16 runtime compatibility. The
+minimum-toolchain CI run and remote candidate CI remain pending; no new remote
+CI status was checked. Podcast integration, LayoutDemo interactive smoke checks,
+and real-device validation were not run. These local results describe the working
+tree candidate, not a published tag.
+
+## Store queries and input-update facts — 2026-11-06
+
+Implemented the shared `SectionControllerQuery<Layout>` contract and
+`Change.inputUpdated` without changing reconciliation acceptance or Collection FIFO.
+
+- Full package suite: **157 tests in 13 suites passed**, 6.682 seconds, using
+  Xcode 27.1 (27A9275) and the iOS 27.0 simulator.
+- Public compiler checks: **8 passed**, including protocol-based inferred/explicit
+  queries and expected rejection of wrong ID and layout types.
+- Public IM / Store examples: `python3 Examples/build.py` succeeded. This was a
+  build check; interactive example smoke tests were not run.
+- `git diff --check` passed.
+
+New coverage checks target versus accepted membership during suspended reconciliation,
+ordered typed queries, same-ID replacement, mixed input-update classification,
+repeated input, retaining-only retry after failure, and selective delivery with both
+built-in data sources. The new API tests first failed to compile because the APIs
+were absent; after implementation the complete suite passed.
+
+Result bundle: `/private/tmp/ParadeQuery-final.xcresult`. Compiler check report:
+`.build/LayoutAPIChecks/results.json`. The test build emitted the existing App Intents
+metadata-extraction warning; no test failed. No new minimum-toolchain run, Podcast
+product migration, application tests, or UI verification was performed.
+
 ## 1.0.0 minimum-toolchain correction — 2026-10-03
 
 The first publication CI run on `8ea19101` failed in Xcode 16.0 / Swift 6.0 before

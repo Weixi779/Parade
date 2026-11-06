@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.0 — 2026-11-06
+
+- Add `SectionControllerQuery<Layout>` with typed ID and ordered type queries,
+  implemented by `SectionStore` and `SectionStore.Change`.
+- Add `Change.inputUpdated` for reused instances whose input updater ran this
+  reconciliation, excluding creation, replacement, and retaining definitions.
+- Clarify acceptance, capture, failure/retry, and page-owned sequencing with
+  Home and Story integration examples. Existing reconciliation and FIFO behavior
+  remain unchanged.
+
+This is an additive release. Existing APIs remain available; iOS 16, Swift 6,
+and the dependency-free package remain unchanged.
+
+Validation: 157 tests in 13 suites, 8 public API compiler checks, the iOS 16
+Release build, and both example builds passed; all 10 IM / Store smoke checks
+passed. See [release preparation](Docs/Verification.md#120-release-preparation--2026-11-06)
+for environment and outstanding CI / application checks.
+
 ## 1.1.1 — 2026-10-17
 
 - Avoid explicit layout invalidation inside staged structural batches, preventing iOS 17 from reading the new snapshot as pre-update counts. Cover first insertion with both populated and empty sections.

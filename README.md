@@ -37,14 +37,14 @@ See [Announcing Swift 6](https://www.swift.org/blog/announcing-swift-6/).
 The package exposes one library and module, `Parade`, with no external dependencies.
 In Xcode, choose **File > Add Package Dependencies**, enter
 `https://github.com/Weixi779/Parade.git`, and select the `Parade` product.
-Use **Up to Next Major Version** from `1.1.1`.
+Use **Up to Next Major Version** from `1.2.0`.
 
 For a Swift package, add the dependency and product to your `Package.swift`:
 
 ```swift
 .package(
     url: "https://github.com/Weixi779/Parade.git",
-    from: "1.1.1"
+    from: "1.2.0"
 )
 ```
 
@@ -337,7 +337,7 @@ let definitions = models.map { model in
 try await sections.reconcile(definitions) { change in
     try await orchestrator
         .compose(change.controllers)
-        .updating(change.retained)
+        .updating(change.inputUpdated)
         .apply()
 }
 ```
@@ -367,9 +367,32 @@ Reuse requires the same ID, Input type, and Controller type. Changing either typ
 replaces the instance. Duplicate IDs reject the whole input before any creation or
 update closure runs. Every surviving instance with a typed input definition receives the current input
 and update closure, even for repeated input. The store retains neither old inputs nor
-definition closures. `Change.retained` follows target order; `Change.removed` follows
-previous order and includes same-ID replacements. Keeping a change retains its
-controllers, including removed instances.
+definition closures. `Change.retained` follows target order. Its subset `Change.inputUpdated` contains
+only reused instances whose update closure ran this time, also in target order.
+Creation, replacement, and retaining definitions are excluded; repeated equal input
+still counts. This is an input-delivery fact, not a content diff or presentation receipt.
+It does not accumulate dirty state: after a failed submission, a retaining-only retry
+has an empty `inputUpdated`; the caller must select any content it needs to resubmit.
+Additional position/accessibility changes may need `.updating(...)` too; sections
+with their own animation flow can be excluded from this selection.
+
+`Change.removed` follows previous order and includes same-ID replacements.
+Keeping a change retains its controllers, including removed instances.
+
+Both Store and Change conform to `SectionControllerQuery<Layout>`:
+
+```swift
+let feed: FeedSection? = sections.controller(for: id)
+let explicit = sections.controller(for: id, as: FeedSection.self)
+let targetFeeds = change.controllers(ofType: FeedSection.self)
+```
+
+The ID must match the queried controller's `Id` type. Missing IDs or incompatible
+controller types return nil. Store point queries use its existing ID index; Change
+point queries scan its target membership. Type queries preserve membership order.
+Store queries reflect accepted membership, while Change queries reflect that
+reconciliation's target even before async acceptance. Both return live instances,
+not frozen input, attachment, visibility, or delivered-content snapshots.
 
 Serialize calls to a store, including the full async reconciliation.
 Do not reenter it from definition or apply callbacks. If `apply`

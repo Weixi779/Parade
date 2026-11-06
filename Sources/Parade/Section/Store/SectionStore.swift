@@ -11,11 +11,11 @@ import Foundation
 /// Serialize reconciliations, including across suspension in `reconcile(_:apply:)`.
 /// Neither definition closures nor the apply callback may reenter this store.
 @MainActor
-public final class SectionStore<Layout> {
+public final class SectionStore<Layout>: SectionControllerQuery {
     /// Instance membership for one reconciliation, not an immutable display snapshot.
     /// Keeping a change alive also retains its controllers, including removed instances.
     @MainActor
-    public struct Change {
+    public struct Change: SectionControllerQuery {
         /// The complete target order, including new and retained instances.
         public var controllers: [any SectionController<Layout>] {
             instances.map { $0.controller }
@@ -26,11 +26,31 @@ public final class SectionStore<Layout> {
         /// Their presentations have not been submitted.
         public let retained: [any SectionController<Layout>]
 
+        /// Reused instances whose input update closure ran in this reconciliation, in target order.
+        /// A subset of `retained`: excludes creation, replacement, and retaining definitions.
+        /// Repeated equal input counts. This is neither a content diff nor a delivery receipt,
+        /// and does not accumulate pending updates across failed submissions or retries.
+        public let inputUpdated: [any SectionController<Layout>]
+
         /// Instances absent from the target, in previous order. Includes same-ID replacements.
         public let removed: [any SectionController<Layout>]
 
         /// Whether instance membership or order changed. Content changes alone do not set this.
         public let hasStructuralChanges: Bool
+
+        /// Searches this change's target membership, including before the store accepts it.
+        /// Membership is fixed, but the returned instance's state can continue changing.
+        public func controller<Controller: SectionController<Layout>>(
+            for id: Controller.Id, as type: Controller.Type
+        ) -> Controller? {
+            instances.first { $0.id == AnyHashable(id) }?.controller as? Controller
+        }
+
+        public func controllers<Controller: SectionController<Layout>>(
+            ofType type: Controller.Type
+        ) -> [Controller] {
+            instances.compactMap { $0.controller as? Controller }
+        }
 
         fileprivate let instances: [any StoredSection<Layout>]
     }
@@ -43,6 +63,21 @@ public final class SectionStore<Layout> {
 
     public var controllers: [any SectionController<Layout>] {
         orderedInstances.map { $0.controller }
+    }
+
+    /// Looks up accepted membership through the store's ID index.
+    /// During async reconciliation, membership remains old until apply succeeds,
+    /// but surviving instances may already contain the new input.
+    public func controller<Controller: SectionController<Layout>>(
+        for id: Controller.Id, as type: Controller.Type
+    ) -> Controller? {
+        instancesById[AnyHashable(id)]?.controller as? Controller
+    }
+
+    public func controllers<Controller: SectionController<Layout>>(
+        ofType type: Controller.Type
+    ) -> [Controller] {
+        orderedInstances.compactMap { $0.controller as? Controller }
     }
 
     /// Fresh, short-lived definitions for reordering/removing current instances without
@@ -90,13 +125,17 @@ public final class SectionStore<Layout> {
             }
         }
 
-        let next = definitions.map { $0.resolve(instancesById[$0.id]) }
+        let resolved = definitions.map { $0.resolve(instancesById[$0.id]) }
+        let next = resolved.map(\.instance)
         let previousIdentities = orderedInstances.map { ObjectIdentifier($0.controller) }
         let nextIdentities = next.map { ObjectIdentifier($0.controller) }
         let previous = Set(previousIdentities)
         let incoming = Set(nextIdentities)
         return Change(
             retained: next.filter { previous.contains(ObjectIdentifier($0.controller)) }.map { $0.controller },
+            inputUpdated: resolved.filter {
+                $0.didUpdateInput && previous.contains(ObjectIdentifier($0.instance.controller))
+            }.map { $0.instance.controller },
             removed: orderedInstances.filter { !incoming.contains(ObjectIdentifier($0.controller)) }.map { $0.controller },
             hasStructuralChanges: previousIdentities != nextIdentities,
             instances: next
